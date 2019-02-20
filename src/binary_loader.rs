@@ -291,7 +291,6 @@ pub fn print_section_contents(section: &Section) {
 
 pub fn print_bytes(bytes: &Vec<u8>) {
     let width: usize = 16;
-    let mut lineno: usize = 0;
 
     for chunk in bytes.chunks(width) {
         for i in 0..chunk.len() {
@@ -314,7 +313,6 @@ pub fn print_bytes(bytes: &Vec<u8>) {
             };
         }
         print!("\n");
-        lineno += width;
     }
     print!("\n");
 }

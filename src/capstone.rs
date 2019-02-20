@@ -7,9 +7,7 @@ include!(concat!(env!("OUT_DIR"), "/bgen_capstone.rs"));
 
 extern crate libc;
 
-use self::libc::{c_void, c_long, size_t};
-use std::ffi::{CString, CStr};
-use std::ptr;
+use std::ffi::CStr;
 use binary_loader::{Binary, BinaryArch, SymbolType};
 
 /* Disassembles a binary. Currently only supports disassembling the .text section.
@@ -19,74 +17,58 @@ use binary_loader::{Binary, BinaryArch, SymbolType};
  *
  * Returns an empty string upon encountering an error.
  */
-pub fn disassemble(bin: &Binary) -> String {
+pub fn disassemble(bin: &Binary) -> u32 {
     // Get .text section of the binary.
     let text = match bin.clone().get_text_section() {
         Ok(sec) => sec,
-        _ => return "Nothing to disassemble".to_string(),
+        _ => return cs_err_CS_ERR_OK,
     };
 
     // Initialize capstone and get the handle for this binary.
     let mut handle = match cap_open(bin) {
         Ok(d) => d,
-        Err(e) => return format!("Failed to open capstone: {}", e),
+        Err(_) => return cs_err_CS_ERR_HANDLE,
     };
 
-    let mut disasm: String = String::new();
     unsafe {
-        let mut count: usize = 0;
-
         /* Set option to enable detailed disassembly.
-         *
          * Note: If using cs_disasm_iter, this option must be set before
          *       calling cs_malloc, otherwise a segfault will occur!
          */
         match cs_option(handle, cs_opt_type_CS_OPT_DETAIL,
                         cs_opt_value_CS_OPT_ON as usize)  {
             cs_err_CS_ERR_OK => (),
-            e => return format!("Failed to set detailed options: {}",
-                                CStr::from_ptr(cs_strerror(e)).to_string_lossy()),
+            _ => return cs_err_CS_ERR_OPTION,
         }
 
-        //let mut insns: *mut cs_insn = ptr::null_mut();
         let cs_ins: *mut cs_insn = cs_malloc(handle);
-
         if cs_ins.is_null() {
-            return "Malloc error".to_string();
+            return cs_err_CS_ERR_MEM;
         }
 
-        // Create a queue for entry points.
-        let mut addr_queue: Vec<u64> = Vec::new();
-
-        // Add addresses to the queue.
+        // Create a queue for entry points and add addresses to the queue.
+        let mut addr_queue: Vec<(String, u64)> = Vec::new();
         if text.contains(bin.entry) {
-            addr_queue.push(bin.entry);
+            addr_queue.push((".text".to_string(), bin.entry));
         }
         for symbol in bin.symbols.iter() {
             match symbol.sym_type  {
                 SymbolType::SymTypeFunc => {
-                    println!("found function at 0x{:05x}", symbol.addr);
                     if text.contains(symbol.addr) {
-                        addr_queue.push(symbol.addr);
-                        println!("added {}", symbol.addr);
+                        addr_queue.push((symbol.name.clone(), symbol.addr));
                     };
                 },
                 _ => (),
             }
         }
 
-        println!("Added {} addresses", addr_queue.len());
-        for addr in addr_queue.iter() {
-            print!("0x{:04x} ", addr);
-        }
-        print!("\n");
         // Remove duplicate addresses.
         addr_queue.sort();
         addr_queue.dedup();
 
         // Recursive disassembly.
-        for addr in addr_queue.iter_mut() {
-            println!("Address: 0x{:016x}", addr);
+        for (name, addr) in addr_queue.iter_mut() {
+            println!("{}: 0x{:016x}", name, addr);
             let offset = *addr - text.vma;
             let mut pc = &mut text.bytes.as_ptr().offset(offset as isize);
             let mut size = (text.size - offset) as usize;
@@ -100,42 +82,12 @@ pub fn disassemble(bin: &Binary) -> String {
             print!("\n");
         }
 
-        // Create the linked list pointed to by insns.
-        /* No longer needed since we're using recursive disassembly.
-        count = cs_disasm(handle, text.bytes.as_ptr(), text.size as usize,
-                          text.vma, 0, &mut insns);
-         */
-
-        /* Loop over each cs_insn and append to the resulting string.
-         * Appends address, bytes, mnemonic, and op_str.
-         */
-        /* Depreciated.
-        for i in 0..count {
-            // Cast counter as isize for use with offset method.
-            let i = i as isize;
-
-            let addr = format!("0x{:016x}: ", (*insns.offset(i)).address);
-            let mut bytes = String::new();
-            for j in 0..16 {
-                if j >= (*insns.offset(i)).size as usize{
-                    break;
-                }
-                bytes.push_str(&format!("{:02x}", (*insns.offset(i)).bytes[j]));
-            }
-
-            let mnemonic = CStr::from_ptr((*insns.offset(i)).mnemonic.as_ptr())
-                                 .to_string_lossy();
-            let op_str = CStr::from_ptr((*insns.offset(i)).op_str.as_ptr())
-                               .to_string_lossy();
-            disasm.push_str(&format!("{} {:24} {} {}\n", addr, bytes, mnemonic, op_str));
-        }
-        */
-
-        //cs_free(insns, count);
+        // Cleanup.
+        cs_free(cs_ins, 1);
         cs_close(&mut handle);
-    }
 
-    disasm
+        cs_err_CS_ERR_OK
+    }
 }
 
 /* Wrapper to automatically initialize capstone based on binary attributes.

@@ -94,7 +94,12 @@ fn main() {
     }
     if options.disam {
         println!("Disassembly:");
-        let asm = disassemble(&b);
-        println!("{}", asm);
+        match disassemble(&b) {
+            0 => (),
+            e => {
+                println!("Disassembly erro: {}", e);
+                process::exit(e as i32);
+            },
+        };
     }
 }

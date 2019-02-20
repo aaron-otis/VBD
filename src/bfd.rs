@@ -169,7 +169,7 @@ fn load_symbols(bfd_h: *mut bfd) -> Result<Vec<Symbol>, LoadError> {
                     flag if (flag & 1 == 1) => SymbolBinding::SymBindLocal,
                     flag if (flag & 2 == 2) => SymbolBinding::SymBindGlobal,
                     flag if (flag & (1 << 7) == 1 << 7) => SymbolBinding::SymBindWeak,
-                    flag => SymbolBinding::SymBindUnk,
+                    _ => SymbolBinding::SymBindUnk,
                 };
 
                 symbols.push(Symbol {
