@@ -1,0 +1,11 @@
+[package]
+name = "ma"
+version = "0.1.4"
+authors = ["aron <amotis@calpoly.edu>"]
+
+[build-dependencies]
+bindgen = "0.47.0"
+
+[dependencies]
+libc = "0.2.47"
+argparse = "0.2.2"
