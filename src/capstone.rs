@@ -46,28 +46,28 @@ pub fn disassemble(bin: &Binary) -> u32 {
             return cs_err_CS_ERR_MEM;
         }
 
+        // @FunType used to differentiate sections from symbols for printing.
+        enum FunType {Symbol, Section}
+
         // Create a queue for entry points and add addresses to the queue.
-        let mut addr_queue: Vec<(String, u64)> = Vec::new();
+        let mut addr_queue: Vec<(String, u64, FunType)> = Vec::new();
         if text.contains(bin.entry) {
-            addr_queue.push((".text".to_string(), bin.entry));
+            addr_queue.push((".text".to_string(), bin.entry, FunType::Section));
         }
         for symbol in bin.symbols.iter() {
             match symbol.sym_type  {
                 SymbolType::SymTypeFunc => {
                     if text.contains(symbol.addr) {
-                        addr_queue.push((symbol.name.clone(), symbol.addr));
+                        addr_queue.push((symbol.name.clone(), symbol.addr,
+                                         FunType::Symbol));
                     };
                 },
                 _ => (),
             }
         }
 
-        // Remove duplicate addresses.
-        addr_queue.sort();
-        addr_queue.dedup();
-
         // Recursive disassembly.
-        for (name, addr) in addr_queue.iter_mut() {
+        for (name, addr, ftype) in addr_queue.iter_mut() {
             println!("{}: 0x{:016x}", name, addr);
             let offset = *addr - text.vma;
             let mut pc = &mut text.bytes.as_ptr().offset(offset as isize);
@@ -78,6 +78,16 @@ pub fn disassemble(bin: &Binary) -> u32 {
                     break;
                 }
                 print_ins(*cs_ins);
+
+                /* In order to prevent printing duplicated instructions, stop
+                 * printing symbol instructions once a return has been
+                 * encountered.
+                 */
+                if (*cs_ins).id == x86_insn_X86_INS_RET && match ftype {
+                        FunType::Symbol => true,
+                        _ => false} {
+                    break;
+                }
             }
             print!("\n");
         }
