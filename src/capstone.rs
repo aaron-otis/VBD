@@ -8,8 +8,9 @@ include!(concat!(env!("OUT_DIR"), "/bgen_capstone.rs"));
 extern crate libc;
 
 use std::ffi::CStr;
-use std::collections::{HashSet, VecDeque};
-use binary_loader::{Binary, BinaryArch, SymbolType};
+use std::collections::{HashMap, HashSet, VecDeque};
+use binary::binary::{Binary, BinaryArch, Function, Instruction, BasicBlock};
+use binary::symbol::SymbolType;
 
 /* Disassembles a binary. Currently only supports disassembling the .text section.
  *
@@ -18,17 +19,19 @@ use binary_loader::{Binary, BinaryArch, SymbolType};
  *
  * Returns an empty string upon encountering an error.
  */
-pub fn disassemble(bin: &Binary) -> u32 {
+pub fn disassemble(bin: &Binary) -> Result<Binary, cs_err> {
+    let mut functions: Vec<Function> = Vec::new();
+
     // Get .text section of the binary.
     let text = match bin.clone().get_text_section() {
         Ok(sec) => sec,
-        _ => return cs_err_CS_ERR_OK,
+        _ => return Ok(bin.to_owned()),
     };
 
     // Initialize capstone and get the handle for this binary.
     let mut handle = match cap_open(bin) {
         Ok(d) => d,
-        Err(_) => return cs_err_CS_ERR_HANDLE,
+        Err(_) => return Err(cs_err_CS_ERR_HANDLE),
     };
 
     unsafe {
@@ -39,12 +42,12 @@ pub fn disassemble(bin: &Binary) -> u32 {
         match cs_option(handle, cs_opt_type_CS_OPT_DETAIL,
                         cs_opt_value_CS_OPT_ON as usize)  {
             cs_err_CS_ERR_OK => (),
-            _ => return cs_err_CS_ERR_OPTION,
+            _ => return Err(cs_err_CS_ERR_OPTION),
         }
 
         let cs_ins: *mut cs_insn = cs_malloc(handle);
         if cs_ins.is_null() {
-            return cs_err_CS_ERR_MEM;
+            return Err(cs_err_CS_ERR_MEM);
         }
 
         // @FunType used to differentiate sections from symbols for printing.
@@ -98,7 +101,7 @@ pub fn disassemble(bin: &Binary) -> u32 {
                 }
 
                 seen.insert((*cs_ins).address);
-                print_ins(*cs_ins);
+                //print_ins(*cs_ins);
 
                 if is_cflow_ins(cs_ins) {
                     match get_immediate_target(cs_ins) {
@@ -128,16 +131,38 @@ pub fn disassemble(bin: &Binary) -> u32 {
                     break;
                 }
             }
-            print!("\n");
+            //print!("\n");
         }
 
         // Cleanup.
         cs_free(cs_ins, 1);
         cs_close(&mut handle);
+    }
 
-        cs_err_CS_ERR_OK
+    Ok(Binary{
+        filename: bin.filename.clone(),
+        bin_type: bin.bin_type.clone(),
+        type_str: bin.type_str.clone(),
+        arch: bin.arch.clone(),
+        arch_str: bin.arch_str.clone(),
+        bits: bin.bits,
+        entry: bin.entry,
+        sections: bin.sections.clone(),
+        symbols: bin.symbols.clone(),
+        functions: functions,
+    })
+}
+
+/*
+pub fn disassemble_and_print(bin: &Binary) {
+    let instructions = disassemble(bin);
+
+    let mut symbol_map: HashMap<u64, String> = HashMap::new();
+    for symbol in bin.symbols.iter() {
+        symbol_map.insert(symbol.addr, symbol.name.clone());
     }
 }
+*/
 
 /* Wrapper to automatically initialize capstone based on binary attributes.
  * Currently only supports x86 and x86_64.

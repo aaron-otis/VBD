@@ -1,15 +1,19 @@
 extern crate argparse;
 
 pub mod binary_loader;
+pub mod binary;
 pub mod conversions;
 pub mod bfd;
 pub mod bgen_bfd;
 pub mod capstone;
+pub mod util;
 
-pub use binary_loader::*;
+use binary::binary::Binary;
+//use binary::section::{print_sections, print_section_contents};
+//use binary::symbol::{print_symbols};
 use argparse::{ArgumentParser, StoreTrue, Store};
 use std::{env, process};
-use capstone::disassemble;
+//use capstone::disassemble;
 
 struct Options {
     fname: String,
@@ -72,7 +76,8 @@ fn main() {
         Err(_e) => panic!("unable to load binary"),
     };
 
-    print_binary(&b);
+    //print_binary(&b);
+    println!("{}", b);
     if options.all {
         options.sections = true;
         options.symbols = true;
@@ -80,20 +85,20 @@ fn main() {
         options.disam = true;
     }
     if options.sections {
-        print_sections(&b.sections);
+        b.print_sections();
     }
     if options.symbols {
-        print_symbols(&b.symbols);
+        //print_symbols(&b.symbols);
+        b.print_symbols();
     }
     if options.dump_sec {
         println!("Section contents:");
-        for sec in b.sections.iter() {
-            print_section_contents(&sec);
-        }
+        b.print_section_contents();
         print!("\n");
     }
     if options.disam {
         println!("Disassembly:");
+        /*
         match disassemble(&b) {
             0 => (),
             e => {
@@ -101,5 +106,6 @@ fn main() {
                 process::exit(e as i32);
             },
         };
+        */
     }
 }
