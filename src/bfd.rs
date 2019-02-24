@@ -10,17 +10,9 @@ extern crate libc;
 use self::libc::{c_void, c_long};
 use std::ffi::{CString, CStr};
 use std::ptr;
-use binary_loader::{Binary,
-                    BinaryArch,
-                    BinaryType,
-                    Symbol,
-                    SymbolType,
-                    SymbolBinding,
-                    SymbolTable,
-                    Section,
-                    SectionType,
-                    LoadError
-                    };
+use binary::binary::{Binary, BinaryArch, BinaryType, LoadError};
+use binary::symbol::{Symbol, SymbolType, SymbolBinding, SymbolTable};
+use binary::section::{Section, SectionType};
 
 pub fn load_binary(fname: String) -> Result<Binary, LoadError> {
 
@@ -70,6 +62,7 @@ pub fn load_binary(fname: String) -> Result<Binary, LoadError> {
             entry: (*bfd_h).start_address,
             sections: sections,
             symbols: symbols,
+            functions: Vec::new(),
         })
     }
 }
