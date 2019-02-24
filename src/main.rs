@@ -1,6 +1,5 @@
 extern crate argparse;
 
-pub mod binary_loader;
 pub mod binary;
 pub mod conversions;
 pub mod bfd;
