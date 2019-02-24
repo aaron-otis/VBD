@@ -8,6 +8,7 @@ include!(concat!(env!("OUT_DIR"), "/bgen_capstone.rs"));
 extern crate libc;
 
 use std::ffi::CStr;
+use std::collections::{HashSet, VecDeque};
 use binary_loader::{Binary, BinaryArch, SymbolType};
 
 /* Disassembles a binary. Currently only supports disassembling the .text section.
@@ -47,18 +48,25 @@ pub fn disassemble(bin: &Binary) -> u32 {
         }
 
         // @FunType used to differentiate sections from symbols for printing.
-        enum FunType {Symbol, Section}
+        enum FunType {Symbol, Section, Unknown}
 
         // Create a queue for entry points and add addresses to the queue.
-        let mut addr_queue: Vec<(String, u64, FunType)> = Vec::new();
+        let mut addr_queue: VecDeque<(String, u64, FunType)> = VecDeque::new();
+
+        // Create a hash set to track which addresses have been processed.
+        let mut seen: HashSet<u64> = HashSet::new();
+
+        // Add known functions to the queue.
         if text.contains(bin.entry) {
-            addr_queue.push((".text".to_string(), bin.entry, FunType::Section));
+            addr_queue.push_back((".text".to_string(),
+                                  bin.entry,
+                                  FunType::Section));
         }
         for symbol in bin.symbols.iter() {
             match symbol.sym_type  {
                 SymbolType::SymTypeFunc => {
                     if text.contains(symbol.addr) {
-                        addr_queue.push((symbol.name.clone(), symbol.addr,
+                        addr_queue.push_back((symbol.name.clone(), symbol.addr,
                                          FunType::Symbol));
                     };
                 },
@@ -67,25 +75,56 @@ pub fn disassemble(bin: &Binary) -> u32 {
         }
 
         // Recursive disassembly.
-        for (name, addr, ftype) in addr_queue.iter_mut() {
-            println!("{}: 0x{:016x}", name, addr);
-            let offset = *addr - text.vma;
-            let mut pc = &mut text.bytes.as_ptr().offset(offset as isize);
+        while !addr_queue.is_empty() {
+            let (name, address, ftype) = addr_queue.pop_front()
+                                                   .expect("addr_queue");
+            let mut addr = address;
+            match seen.get(&addr) {
+                Some(_) => continue,
+                _ =>  (),
+            }
+            match ftype {
+                FunType::Symbol => println!("{}: ; sym@0x{:013x}", name, addr),
+                FunType::Section => println!("{} ; sec@0x{:013x}", name, addr),
+                FunType::Unknown => println!("; fun@0x{:013x}", addr),
+            };
+            let offset = addr - text.vma;
+            let pc = &mut text.bytes.as_ptr().offset(offset as isize);
             let mut size = (text.size - offset) as usize;
 
-            while cs_disasm_iter(handle, pc, &mut size, addr, cs_ins) {
+            while cs_disasm_iter(handle, pc, &mut size, &mut addr, cs_ins) {
                 if (*cs_ins).id == x86_insn_X86_INS_INVALID || (*cs_ins).size == 0 {
                     break;
                 }
+
+                seen.insert((*cs_ins).address);
                 print_ins(*cs_ins);
 
-                /* In order to prevent printing duplicated instructions, stop
-                 * printing symbol instructions once a return has been
-                 * encountered.
-                 */
-                if (*cs_ins).id == x86_insn_X86_INS_RET && match ftype {
-                        FunType::Symbol => true,
-                        _ => false} {
+                if is_cflow_ins(cs_ins) {
+                    match get_immediate_target(cs_ins) {
+                        Some(target_addr) => {
+                            match seen.get(&target_addr) {
+                                None => {
+                                    if text.contains(target_addr) {
+                                        addr_queue.push_back(("".to_string(),
+                                                              target_addr,
+                                                              FunType::Unknown));
+                                    }
+                                },
+                                Some(_) => (),
+                            };
+                        },
+                        None => (),
+                    };
+
+                    /* Stop printing once an unconditional control flow
+                     * instruction has been encountered.
+                     */
+                    if is_unconditional_cflow_ins(cs_ins) {
+                        break;
+                    }
+                }
+                if (*cs_ins).id == x86_insn_X86_INS_HLT {
                     break;
                 }
             }
@@ -149,4 +188,56 @@ fn print_ins(ins: cs_insn) {
         let op_str = CStr::from_ptr(ins.op_str.as_ptr()).to_string_lossy();
         println!(" {} {}", mnemonic, op_str);
     }
+}
+
+/* Check if an instruction is an unconditional control flow type
+ * (i.e a jump).
+ */
+fn is_unconditional_cflow_ins(ins: *const cs_insn) -> bool {
+    let id: u32;
+
+    unsafe {
+        id = (*ins).id;
+    }
+
+    return id == x86_insn_X86_INS_JMP || id == x86_insn_X86_INS_LJMP ||
+           id == x86_insn_X86_INS_RET || id == x86_insn_X86_INS_RETF ||
+           id == x86_insn_X86_INS_RETFQ;
+}
+
+fn is_cflow_ins(ins: *const cs_insn) -> bool {
+    unsafe {
+        for i in 0..(*(*ins).detail).groups_count as usize {
+            let group = (*(*ins).detail).groups[i];
+            if is_cflow_group(group.into()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_cflow_group(group: u32) -> bool {
+    return group == cs_group_type_CS_GRP_JUMP ||
+           group == cs_group_type_CS_GRP_CALL ||
+           group == cs_group_type_CS_GRP_RET ||
+           group == cs_group_type_CS_GRP_IRET;
+}
+
+fn get_immediate_target(ins: *const cs_insn) -> Option<u64> {
+    unsafe {
+        let mut op: *mut cs_x86_op;
+
+        for i in 0..(*(*ins).detail).groups_count as usize {
+            if is_cflow_group((*(*ins).detail).groups[i].into()) {
+                for j in 0..(*(*ins).detail).__bindgen_anon_1.x86.op_count {
+                    op = &mut (*(*ins).detail).__bindgen_anon_1.x86.operands[j as usize];
+                    if (*op).type_ == x86_op_type_X86_OP_IMM {
+                        return Some((*op).__bindgen_anon_1.imm as u64);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
