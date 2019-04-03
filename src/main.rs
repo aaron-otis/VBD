@@ -12,7 +12,7 @@ use binary::binary::Binary;
 //use binary::symbol::{print_symbols};
 use argparse::{ArgumentParser, StoreTrue, Store};
 use std::{env, process};
-//use capstone::disassemble;
+use capstone::disassemble;
 
 struct Options {
     fname: String,
@@ -76,7 +76,8 @@ fn main() {
     };
 
     //print_binary(&b);
-    println!("{}", b);
+    println!("File:\t{}\nType:\t{}\nArch:\t{}\nEntry:\t0x{:016x}\n",
+               b.filename, b.type_str, b.arch_str, b.entry);
     if options.all {
         options.sections = true;
         options.symbols = true;
@@ -96,7 +97,10 @@ fn main() {
         print!("\n");
     }
     if options.disam {
-        println!("Disassembly:");
+        match disassemble(&b) {
+            Ok(disassmbled) => println!("Disassembly:\n{}", disassmbled),
+            Err(e) => println!("Disassembly error: {}", e),
+        };
         /*
         match disassemble(&b) {
             0 => (),
