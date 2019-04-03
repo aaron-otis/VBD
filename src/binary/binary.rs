@@ -11,6 +11,7 @@ use std::ffi::CStr;
 use super::section::*;
 use super::symbol::*;
 use super::super::util::print_bytes;
+use super::super::capstone;
 
 pub enum LoadError {
     SectionNotFound,
@@ -56,6 +57,7 @@ pub struct Binary {
 pub struct Function {
     pub name: String,
     pub addr: u64,
+    pub comment: String,
     pub basic_blocks: Vec<BasicBlock>,
 }
 
@@ -64,7 +66,7 @@ pub struct BasicBlock {
 }
 
 pub struct Instruction {
-    pub instruction: cs_insn,
+    pub instruction: capstone::cs_insn,
 }
 
 impl Binary {
@@ -82,6 +84,24 @@ impl Binary {
             }
         }
         Err(LoadError::SectionNotFound)
+    }
+
+    pub fn is_addr_section(&self, addr: u64) -> Option<String> {
+        for section in self.sections.iter() {
+            if section.vma == addr {
+                return Some(section.name.clone());
+            }
+        }
+        None
+    }
+
+    pub fn is_addr_symbol(&self, addr: u64) -> Option<String> {
+        for symbol in self.symbols.iter() {
+            if symbol.addr == addr {
+                return Some(symbol.name.clone());
+            }
+        }
+        None
     }
 
     pub fn print_symbols(&self) {
@@ -133,8 +153,11 @@ impl Binary {
 
 impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "File:\t{}\nType:\t{}\nArch:\t{}\nEntry:\t0x{:016x}\n",
-               self.filename, self.type_str, self.arch_str, self.entry)
+        let mut b_str = String::new();
+        for function in self.functions.iter() {
+            b_str.push_str(&format!("{}\n", function));
+        }
+        write!(f, "{}", b_str)
     }
 }
 
@@ -146,17 +169,19 @@ impl Clone for Function {
         Function{
             name: self.name.clone(),
             addr: self.addr,
+            comment: self.comment.clone(),
             basic_blocks: self.basic_blocks.clone(),
         }
     }
 }
+
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let bb_str = self.basic_blocks.iter()
                                       .map(|ref ins| format!("{}", ins))
                                       .collect::<Vec<String>>()
-                                      .join("\n");
-        write!(f, "; {}@{}\n{}\n", self.name, self.addr, bb_str)
+                                      .join("\n\t|\n\tv\n");
+        write!(f, "{}\n{}\n", self.comment, bb_str)
     }
 }
 
@@ -173,6 +198,12 @@ impl fmt::Display for BasicBlock {
                                       .collect::<Vec<String>>()
                                       .join("\n");
         write!(f, "{}", bb_str)
+    }
+}
+
+impl Instruction {
+    pub fn new(ins: capstone::cs_insn) -> Instruction {
+        Instruction{instruction: ins}
     }
 }
 
