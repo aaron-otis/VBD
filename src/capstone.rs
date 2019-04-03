@@ -8,16 +8,15 @@ include!(concat!(env!("OUT_DIR"), "/bgen_capstone.rs"));
 extern crate libc;
 
 use std::ffi::CStr;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use binary::binary::{Binary, BinaryArch, Function, Instruction, BasicBlock};
 use binary::symbol::SymbolType;
 
 /* Disassembles a binary. Currently only supports disassembling the .text section.
  *
  * Input:   A reference to a Binary object, bin.
- * Output:  A string representing disassembled assembly code.
- *
- * Returns an empty string upon encountering an error.
+ * Output:  A string representing disassembled assembly code or an empty string
+ *          upon encountering and error.
  */
 pub fn disassemble(bin: &Binary) -> Result<Binary, cs_err> {
     let mut functions: Vec<Function> = Vec::new();
@@ -86,14 +85,17 @@ pub fn disassemble(bin: &Binary) -> Result<Binary, cs_err> {
                 Some(_) => continue,
                 _ =>  (),
             }
-            match ftype {
-                FunType::Symbol => println!("{}: ; sym@0x{:013x}", name, addr),
-                FunType::Section => println!("{} ; sec@0x{:013x}", name, addr),
-                FunType::Unknown => println!("; fun@0x{:013x}", addr),
+            let comment = match ftype {
+                FunType::Symbol => format!("{}: ; sym@0x{:013x}", name, addr),
+                FunType::Section => format!("{} ; sec@0x{:013x}", name, addr),
+                FunType::Unknown => format!("; fun@0x{:013x}", addr),
             };
             let offset = addr - text.vma;
             let pc = &mut text.bytes.as_ptr().offset(offset as isize);
             let mut size = (text.size - offset) as usize;
+
+            let mut basic_blocks: Vec<BasicBlock> = Vec::new();
+            let mut instructions: Vec<Instruction> = Vec::new();
 
             while cs_disasm_iter(handle, pc, &mut size, &mut addr, cs_ins) {
                 if (*cs_ins).id == x86_insn_X86_INS_INVALID || (*cs_ins).size == 0 {
@@ -101,9 +103,14 @@ pub fn disassemble(bin: &Binary) -> Result<Binary, cs_err> {
                 }
 
                 seen.insert((*cs_ins).address);
+                instructions.push(Instruction{instruction: *cs_ins});
                 //print_ins(*cs_ins);
 
                 if is_cflow_ins(cs_ins) {
+                    // We found the end of a basic block, Add it to the vector.
+                    basic_blocks.push(BasicBlock{instructions: instructions});
+                    instructions = Vec::new();
+
                     match get_immediate_target(cs_ins) {
                         Some(target_addr) => {
                             match seen.get(&target_addr) {
@@ -124,6 +131,11 @@ pub fn disassemble(bin: &Binary) -> Result<Binary, cs_err> {
                      * instruction has been encountered.
                      */
                     if is_unconditional_cflow_ins(cs_ins) {
+                        // We found the end of a function, add it to the vector.
+                        functions.push(Function{name: name.clone(),
+                                                addr: addr,
+                                                comment: comment,
+                                                basic_blocks: basic_blocks});
                         break;
                     }
                 }
