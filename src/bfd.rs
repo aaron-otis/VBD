@@ -63,6 +63,7 @@ pub fn load_binary(fname: String) -> Result<Binary, LoadError> {
             sections: sections,
             symbols: symbols,
             functions: Vec::new(),
+            instructions: Vec::new(),
         })
     }
 }

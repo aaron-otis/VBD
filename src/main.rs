@@ -12,7 +12,6 @@ use binary::binary::Binary;
 //use binary::symbol::{print_symbols};
 use argparse::{ArgumentParser, StoreTrue, Store};
 use std::{env, process};
-use capstone::disassemble;
 
 struct Options {
     fname: String,
@@ -70,7 +69,7 @@ fn main() {
     }
 
     // Parse binary.
-    let b = match Binary::new(options.fname) {
+    let mut b = match Binary::new(options.fname) {
         Ok(b) => b,
         Err(_e) => panic!("unable to load binary"),
     };
@@ -97,11 +96,15 @@ fn main() {
         print!("\n");
     }
     if options.disam {
+        match b.disassemble() {
+            Ok(_) => println!("Successfully disassembled binary"),
+            Err(e) => println!("Error disassembling"),
+        };
+        /*
         match disassemble(&b) {
             Ok(disassmbled) => println!("Disassembly:\n{}", disassmbled),
             Err(e) => println!("Disassembly error: {}", e),
         };
-        /*
         match disassemble(&b) {
             0 => (),
             e => {

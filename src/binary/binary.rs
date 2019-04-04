@@ -52,6 +52,7 @@ pub struct Binary {
     pub sections: Vec<Section>,
     pub symbols: Vec<Symbol>,
     pub functions: Vec<Function>,
+    pub instructions: Vec<Vec<capstone::cs_insn>>,
 }
 
 pub struct Function {
@@ -71,10 +72,33 @@ pub struct Instruction {
 
 impl Binary {
     pub fn new<'b>(fname: String) -> Result<Binary, LoadError> {
+        /*
         match load_binary(fname.clone()) {
             Ok(b) => return Ok(b),
             Err(e) => return Err(e),
         };
+        */
+        load_binary(fname.clone())
+    }
+
+    pub fn disassemble(&mut self) -> Result<(), cs_err> {
+        self.instructions = match capstone::disassemble(self){
+            Ok(instructions) => instructions,
+            Err(e) => return Err(e),
+        };
+        Ok(())
+    }
+
+    pub fn analyze(&self) {
+        let instruction_blocks = capstone::disassemble(self);
+        let mut functions: Vec<Function> = Vec::new();
+
+        let mut basic_blocks: Vec<BasicBlock> = Vec::new();
+        let mut instructions: Vec<Instruction> = Vec::new();
+        for block in instruction_blocks {
+            for ins in block {
+            }
+        }
     }
 
     pub fn get_text_section<'c>(self) -> Result<Section, LoadError> {
