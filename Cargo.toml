@@ -2,6 +2,7 @@
 name = "ma"
 version = "0.1.4"
 authors = ["aron <amotis@calpoly.edu>"]
+publish = false
 
 [build-dependencies]
 bindgen = "0.47.0"
@@ -9,3 +10,21 @@ bindgen = "0.47.0"
 [dependencies]
 libc = "0.2.47"
 argparse = "0.2.2"
+p8n-types = "2.0.1"
+
+[profile.dev]
+opt-level = 0
+debug = true
+debug-assertions = true
+panic = 'unwind'
+overflow-checks = true
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+panic = 'unwind'
+incremental = false
+overflow-checks = false
+
+[workspace]
