@@ -1,4 +1,5 @@
 extern crate argparse;
+extern crate p8n_types;
 
 pub mod binary;
 pub mod conversions;
@@ -6,8 +7,10 @@ pub mod bfd;
 pub mod bgen_bfd;
 pub mod capstone;
 pub mod util;
+pub mod statistics;
 
 use binary::binary::Binary;
+use statistics::{count_instructions, print_statistics};
 //use binary::section::{print_sections, print_section_contents};
 //use binary::symbol::{print_symbols};
 use argparse::{ArgumentParser, StoreTrue, Store};
@@ -19,6 +22,7 @@ struct Options {
     dump_sec: bool,
     symbols: bool,
     disam: bool,
+    stats: bool,
     all: bool,
 }
 
@@ -30,6 +34,7 @@ fn main() {
         dump_sec: false,
         symbols: false,
         disam: false,
+        stats: false,
         all: false,
     };
 
@@ -56,6 +61,10 @@ fn main() {
           .add_option(&["-d", "--disassemble"],
                       StoreTrue,
                       "Disassemble the text section of the program.");
+        ap.refer(&mut options.stats)
+          .add_option(&["-T", "--satistics"],
+                      StoreTrue,
+                      "Gather statistics on the given binary.");
         ap.refer(&mut options.all).add_option(&["-A", "--all"],
                                               StoreTrue, "Enable all options");
         ap.parse_args_or_exit();
@@ -74,7 +83,6 @@ fn main() {
         Err(_e) => panic!("unable to load binary"),
     };
 
-    //print_binary(&b);
     println!("File:\t{}\nType:\t{}\nArch:\t{}\nEntry:\t0x{:016x}\n",
                b.filename, b.type_str, b.arch_str, b.entry);
     if options.all {
@@ -98,20 +106,14 @@ fn main() {
     if options.disam {
         match b.disassemble() {
             Ok(_) => println!("Successfully disassembled binary"),
-            Err(e) => println!("Error disassembling"),
+            Err(e) => println!("Error disassembling: {}", e),
         };
-        /*
-        match disassemble(&b) {
-            Ok(disassmbled) => println!("Disassembly:\n{}", disassmbled),
-            Err(e) => println!("Disassembly error: {}", e),
+    }
+    if options.stats {
+        // FIXME: Don't potentially disassemble twice.
+        match b.disassemble() {
+            Ok(_) => print_statistics(&count_instructions(&b)),
+            Err(e) => println!("Error disassembling: {}", e),
         };
-        match disassemble(&b) {
-            0 => (),
-            e => {
-                println!("Disassembly erro: {}", e);
-                process::exit(e as i32);
-            },
-        };
-        */
     }
 }
