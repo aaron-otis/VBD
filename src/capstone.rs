@@ -220,7 +220,7 @@ fn cap_open(bin: &Binary) -> Result<csh, cs_err> {
  * Input:   A single instruction represented as a cs_insn.
  * Output:  None.
  */
-fn print_ins(ins: cs_insn) {
+pub fn print_ins(ins: cs_insn) {
     unsafe {
         print!("0x{:013x} ", ins.address);
         for i in 0..16 {
