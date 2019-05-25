@@ -7,6 +7,7 @@ include!(concat!(env!("OUT_DIR"), "/bgen_capstone.rs"));
 
 extern crate libc;
 
+use std::fmt;
 use std::ffi::CStr;
 use std::collections::{HashSet, VecDeque};
 use binary::binary::{Binary, BinaryArch, Function, Instruction, BasicBlock};
@@ -150,7 +151,6 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
                     break;
                 }
             }
-            //print!("\n");
         }
 
         // Cleanup.
@@ -159,32 +159,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
     }
 
     Ok(instruction_blocks)
-    /*
-    Ok(Binary{
-        filename: bin.filename.clone(),
-        bin_type: bin.bin_type.clone(),
-        type_str: bin.type_str.clone(),
-        arch: bin.arch.clone(),
-        arch_str: bin.arch_str.clone(),
-        bits: bin.bits,
-        entry: bin.entry,
-        sections: bin.sections.clone(),
-        symbols: bin.symbols.clone(),
-        functions: functions,
-    })
-    */
 }
-
-/*
-pub fn disassemble_and_print(bin: &Binary) {
-    let instructions = disassemble(bin);
-
-    let mut symbol_map: HashMap<u64, String> = HashMap::new();
-    for symbol in bin.symbols.iter() {
-        symbol_map.insert(symbol.addr, symbol.name.clone());
-    }
-}
-*/
 
 /* Wrapper to automatically initialize capstone based on binary attributes.
  * Currently only supports x86 and x86_64.
@@ -287,4 +262,29 @@ fn get_immediate_target(ins: *const cs_insn) -> Option<u64> {
         }
     }
     None
+}
+
+impl fmt::Display for cs_insn {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut ins_str = String::new();
+
+        unsafe {
+            ins_str.push_str(&format!("0x{:013x} ", self.address));
+            for i in 0..16 {
+                if i < self.size as usize {
+                    ins_str.push_str(&format!("{:02x}", self.bytes[i]));
+                }
+                else {
+                    ins_str.push_str(&format!("  "));
+                }
+            }
+            let mnemonic = CStr::from_ptr(self.mnemonic.as_ptr())
+                                 .to_string_lossy();
+            let op_str = CStr::from_ptr(self.op_str.as_ptr())
+                               .to_string_lossy();
+            ins_str.push_str(&format!(" {} {}", mnemonic, op_str));
+        }
+
+        write!(f, "{}", ins_str)
+    }
 }
