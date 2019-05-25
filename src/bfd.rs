@@ -169,7 +169,20 @@ fn load_symbols(bfd_h: *mut bfd) -> Result<Vec<Symbol>, LoadError> {
                 symbols.push(Symbol {
                                 sym_type: sym_type,
                                 name: name,
-                                addr: (*(*sym).section).vma as u64 + (*sym).value as u64,
+                                /* Symbol values have multiple meanings based on their
+                                 * contexts. In relocatable files, the value is an
+                                 * offset into the section it is contained in, unless
+                                 * the section index is SHN_COMMON. In this case, the
+                                 * value field holds alignment constraints. In executable
+                                 * and shared objects, the value is a virtual address.
+                                 */
+                                addr: match (*sym).flags {
+                                    // This is a virtual address.
+                                    0x8002 => (*sym).value as u64,
+                                    // This is an offset.
+                                    _ => (*(*sym).section).vma as u64 +
+                                        (*sym).value as u64,
+                                },
                                 binding: binding,
                                 table: match table {
                                     SymbolTable::SymTabStatic => 
