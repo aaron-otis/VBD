@@ -15,6 +15,7 @@ use statistics::{count_instructions, print_statistics};
 //use binary::symbol::{print_symbols};
 use argparse::{ArgumentParser, StoreTrue, Store};
 use std::{env, process};
+use capstone::print_ins;
 
 struct Options {
     fname: String,
@@ -105,7 +106,16 @@ fn main() {
     }
     if options.disam {
         match b.disassemble() {
-            Ok(_) => println!("Successfully disassembled binary"),
+            Ok(_) => {
+                println!("Executing crude printing!\n");
+                for block in b.instructions.clone() {
+                    for insn in block {
+                        print_ins(insn);
+                    }
+                    println!("");
+                }
+                println!("Successfully disassembled binary")
+            },
             Err(e) => println!("Error disassembling: {}", e),
         };
     }
