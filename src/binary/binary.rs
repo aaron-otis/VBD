@@ -55,29 +55,8 @@ pub struct Binary {
     pub instructions: Vec<Vec<capstone::cs_insn>>,
 }
 
-pub struct Function {
-    pub name: String,
-    pub addr: u64,
-    pub comment: String,
-    pub basic_blocks: Vec<BasicBlock>,
-}
-
-pub struct BasicBlock {
-    pub instructions: Vec<Instruction>,
-}
-
-pub struct Instruction {
-    pub instruction: capstone::cs_insn,
-}
-
 impl Binary {
     pub fn new<'b>(fname: String) -> Result<Binary, LoadError> {
-        /*
-        match load_binary(fname.clone()) {
-            Ok(b) => return Ok(b),
-            Err(e) => return Err(e),
-        };
-        */
         load_binary(fname.clone())
     }
 
@@ -93,9 +72,11 @@ impl Binary {
         let instruction_blocks = capstone::disassemble(self);
         let mut functions: Vec<Function> = Vec::new();
 
-        let mut basic_blocks: Vec<BasicBlock> = Vec::new();
-        let mut instructions: Vec<Instruction> = Vec::new();
+
         for block in instruction_blocks {
+            let mut basic_blocks: Vec<BasicBlock> = Vec::new();
+            let mut instructions: Vec<Instruction> = Vec::new();
+
             for ins in block {
             }
         }
@@ -185,6 +166,13 @@ impl fmt::Display for Binary {
     }
 }
 
+pub struct Function {
+    pub name: String,
+    pub addr: u64,
+    pub comment: String,
+    pub basic_blocks: Vec<BasicBlock>,
+}
+
 impl Function {
 }
 
@@ -209,20 +197,68 @@ impl fmt::Display for Function {
     }
 }
 
+pub struct BasicBlock {
+    pub entry: u64,
+    pub size: u64,
+    pub instructions: Vec<capstone::cs_insn>,
+}
+
+impl BasicBlock {
+    pub fn new(instructions: Vec<capstone::cs_insn>) -> BasicBlock {
+        BasicBlock {
+            entry: instructions[0].address,
+            size: instructions.len() as u64,
+            instructions: instructions
+        }
+    }
+
+    pub fn split(self, addr: u64) -> Option<(BasicBlock, BasicBlock)> {
+        if addr == self.entry {
+            return None;
+        }
+
+        let offset: usize = (addr - self.entry) as usize;
+        let low_block = BasicBlock {
+                            entry: self.entry,
+                            size: addr - self.entry,
+                            instructions: self.instructions[..offset - 1].to_vec()
+                        };
+        let high_size = self.size - low_block.size;
+        Some((low_block,
+              BasicBlock {
+                  entry: addr,
+                  size: high_size,
+                  instructions: self.instructions[offset..].to_vec(),
+              }))
+    }
+
+    pub fn contains(self, addr: u64) -> bool {
+        self.entry <= addr && addr <= self.entry + self.size
+    }
+}
+
 impl Clone for BasicBlock {
     fn clone (&self) -> BasicBlock {
-        BasicBlock {instructions: self.instructions.clone()}
+        BasicBlock {
+            entry: self.entry,
+            size: self.size,
+            instructions: self.instructions.clone()
+        }
     }
 }
 
 impl fmt::Display for BasicBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let bb_str = self.instructions.iter()
-                                      .map(Instruction::to_string)
+                                      .map(capstone::cs_insn::to_string)
                                       .collect::<Vec<String>>()
                                       .join("\n");
         write!(f, "{}", bb_str)
     }
+}
+
+pub struct Instruction {
+    pub instruction: capstone::cs_insn,
 }
 
 impl Instruction {
