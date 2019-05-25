@@ -8,6 +8,7 @@ include!(concat!(env!("OUT_DIR"), "/bgen_capstone.rs"));
 use std::fmt;
 use bfd::load_binary;
 use std::ffi::CStr;
+use std::collections::HashSet;
 use super::section::*;
 use super::symbol::*;
 use super::super::util::print_bytes;
@@ -193,7 +194,7 @@ impl fmt::Display for Function {
 pub struct BasicBlock {
     pub entry: u64,
     pub size: u64,
-    pub references: Vec<u64>,
+    pub references: HashSet<u64>,
     pub instructions: Vec<capstone::cs_insn>,
 }
 
@@ -202,7 +203,7 @@ impl BasicBlock {
         BasicBlock {
             entry: instructions[0].address,
             size: instructions.len() as u64,
-            references: Vec::new(),
+            references: HashSet::new(),
             instructions: instructions
         }
     }
@@ -225,8 +226,12 @@ impl BasicBlock {
                   entry: addr,
                   size: high_size,
                   references: match xref {
-                      Some(xref) => vec![xref],
-                      None => Vec::new(),
+                      Some(xref) => {
+                          let mut set: HashSet<u64> = HashSet::new();
+                          set.insert(xref);
+                          set
+                      },
+                      None => HashSet::new(),
                   },
                   instructions: self.instructions[offset..].to_vec(),
               }))
