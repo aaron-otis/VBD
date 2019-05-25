@@ -25,12 +25,14 @@ pub enum LoadError {
     SecReadErr,
 }
 
+#[derive(Clone)]
 pub enum BinaryType {
     BinTypeAuto,
     BinTypeELF,
     BinTypePE,
 }
 
+#[derive(Clone)]
 pub enum BinaryArch {
     ArchNone,
     ArchX86,
@@ -166,6 +168,7 @@ impl fmt::Display for Binary {
     }
 }
 
+#[derive(Clone)]
 pub struct Function {
     pub name: String,
     pub addr: u64,
@@ -174,17 +177,6 @@ pub struct Function {
 }
 
 impl Function {
-}
-
-impl Clone for Function {
-    fn clone (&self) -> Function {
-        Function{
-            name: self.name.clone(),
-            addr: self.addr,
-            comment: self.comment.clone(),
-            basic_blocks: self.basic_blocks.clone(),
-        }
-    }
 }
 
 impl fmt::Display for Function {
@@ -197,9 +189,11 @@ impl fmt::Display for Function {
     }
 }
 
+#[derive(Clone)]
 pub struct BasicBlock {
     pub entry: u64,
     pub size: u64,
+    pub references: Vec<u64>,
     pub instructions: Vec<capstone::cs_insn>,
 }
 
@@ -208,11 +202,12 @@ impl BasicBlock {
         BasicBlock {
             entry: instructions[0].address,
             size: instructions.len() as u64,
+            references: Vec::new(),
             instructions: instructions
         }
     }
 
-    pub fn split(self, addr: u64) -> Option<(BasicBlock, BasicBlock)> {
+    pub fn split(self, addr: u64, xref: Option<u64>) -> Option<(BasicBlock, BasicBlock)> {
         if addr == self.entry {
             return None;
         }
@@ -221,6 +216,7 @@ impl BasicBlock {
         let low_block = BasicBlock {
                             entry: self.entry,
                             size: addr - self.entry,
+                            references: self.references,
                             instructions: self.instructions[..offset - 1].to_vec()
                         };
         let high_size = self.size - low_block.size;
@@ -228,22 +224,16 @@ impl BasicBlock {
               BasicBlock {
                   entry: addr,
                   size: high_size,
+                  references: match xref {
+                      Some(xref) => vec![xref],
+                      None => Vec::new(),
+                  },
                   instructions: self.instructions[offset..].to_vec(),
               }))
     }
 
     pub fn contains(self, addr: u64) -> bool {
         self.entry <= addr && addr <= self.entry + self.size
-    }
-}
-
-impl Clone for BasicBlock {
-    fn clone (&self) -> BasicBlock {
-        BasicBlock {
-            entry: self.entry,
-            size: self.size,
-            instructions: self.instructions.clone()
-        }
     }
 }
 
@@ -264,12 +254,6 @@ pub struct Instruction {
 impl Instruction {
     pub fn new(ins: capstone::cs_insn) -> Instruction {
         Instruction{instruction: ins}
-    }
-}
-
-impl Clone for Instruction {
-    fn clone (&self) -> Instruction {
-        Instruction{instruction: self.instruction.clone()}
     }
 }
 
@@ -295,28 +279,5 @@ impl fmt::Display for Instruction {
         }
 
         write!(f, "{}", ins_str)
-    }
-}
-
-impl Clone for BinaryType {
-    fn clone (&self) -> BinaryType {
-        match self {
-            BinaryType::BinTypeAuto => BinaryType::BinTypeAuto,
-            BinaryType::BinTypeELF => BinaryType::BinTypeELF,
-            BinaryType::BinTypePE => BinaryType::BinTypePE,
-        }
-    }
-}
-
-impl Clone for BinaryArch {
-    fn clone (&self) -> BinaryArch {
-        match self {
-            BinaryArch::ArchNone => BinaryArch::ArchNone,
-            BinaryArch::ArchX86 => BinaryArch::ArchX86,
-            BinaryArch::ArchArm => BinaryArch::ArchArm,
-            BinaryArch::ArchX86_64 => BinaryArch::ArchX86_64,
-            BinaryArch::ArchArm64 => BinaryArch::ArchArm64,
-            BinaryArch::ArchRISCV => BinaryArch::ArchRISCV,
-        }
     }
 }
