@@ -9,7 +9,7 @@ extern crate libc;
 
 use std::fmt;
 use std::ffi::CStr;
-use std::collections::{HashSet, VecDeque, HashMap};
+use std::collections::{HashSet, VecDeque, HashMap, BTreeMap};
 use binary::binary::{Binary, BinaryArch, Function, Instruction, BasicBlock};
 use binary::symbol::SymbolType;
 
@@ -80,7 +80,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
         }
 
         // Store references to each address in a map.
-        let mut references: HashMap<u64, HashSet<u64>> = HashMap::new();
+        let mut references: BTreeMap<u64, HashSet<u64>> = BTreeMap::new();
 
         // Recursive disassembly.
         while !addr_queue.is_empty() {
@@ -100,7 +100,6 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
             let pc = &mut text.bytes.as_ptr().offset(offset as isize);
             let mut size = (text.size - offset) as usize;
 
-            let mut basic_blocks: Vec<BasicBlock> = Vec::new();
             let mut instructions: Vec<cs_insn> = Vec::new();
 
             while cs_disasm_iter(handle, pc, &mut size, &mut addr, cs_ins) {
@@ -157,6 +156,9 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
                 }
             }
         }
+
+        // Done disassembling, now make sure basic blocks are ordered and correct.
+        let mut basic_blocks: Vec<BasicBlock> = Vec::new();
 
         // Cleanup.
         cs_free(cs_ins, 1);
@@ -293,3 +295,12 @@ impl fmt::Display for cs_insn {
         write!(f, "{}", ins_str)
     }
 }
+
+impl PartialEq for cs_insn {
+    fn eq(&self, other: &Self) -> bool {
+        self.address == other.address
+    }
+}
+
+// Cannot derive Eq, so must provide an impl without methods.
+impl Eq for cs_insn {}
