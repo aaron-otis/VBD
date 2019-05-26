@@ -9,7 +9,7 @@ extern crate libc;
 
 use std::fmt;
 use std::ffi::CStr;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque, HashMap};
 use binary::binary::{Binary, BinaryArch, Function, Instruction, BasicBlock};
 use binary::symbol::SymbolType;
 
@@ -79,6 +79,9 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
             }
         }
 
+        // Store references to each address in a map.
+        let mut references: HashMap<u64, HashSet<u64>> = HashMap::new();
+
         // Recursive disassembly.
         while !addr_queue.is_empty() {
             let (name, address, ftype) = addr_queue.pop_front()
@@ -97,8 +100,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
             let pc = &mut text.bytes.as_ptr().offset(offset as isize);
             let mut size = (text.size - offset) as usize;
 
-            //let mut basic_blocks: Vec<BasicBlock> = Vec::new();
-            //let mut instructions: Vec<Instruction> = Vec::new();
+            let mut basic_blocks: Vec<BasicBlock> = Vec::new();
             let mut instructions: Vec<cs_insn> = Vec::new();
 
             while cs_disasm_iter(handle, pc, &mut size, &mut addr, cs_ins) {
@@ -108,8 +110,6 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
 
                 seen.insert((*cs_ins).address);
                 instructions.push(*cs_ins);
-                //instructions.push(Instruction{instruction: *cs_ins});
-                //print_ins(*cs_ins);
 
                 if is_cflow_ins(cs_ins) {
                     // We found the end of a basic block, Add it to the vector.
@@ -118,6 +118,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
 
                     match get_immediate_target(cs_ins) {
                         Some(target_addr) => {
+                            // Add the target address to the set of seen addresses.
                             match seen.get(&target_addr) {
                                 None => {
                                     if text.contains(target_addr) {
@@ -128,6 +129,10 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
                                 },
                                 Some(_) => (),
                             };
+                            // Add a reference to this address in references map.
+                            let xref: &mut HashSet<u64> = references.entry(target_addr)
+                                                           .or_insert(HashSet::new());
+                            xref.insert((*cs_ins).address);
                         },
                         None => (),
                     };
