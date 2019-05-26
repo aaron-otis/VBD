@@ -107,6 +107,11 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
                     break;
                 }
 
+                if seen.contains(&(*cs_ins).address) {
+                    instruction_blocks.push(instructions);
+                    break;
+                }
+
                 seen.insert((*cs_ins).address);
                 instructions.push(*cs_ins);
 
