@@ -9,6 +9,7 @@ use std::fmt;
 use bfd::load_binary;
 use std::ffi::CStr;
 use std::collections::HashSet;
+use std::cmp::Ordering;
 use super::section::*;
 use super::symbol::*;
 use super::super::util::print_bytes;
@@ -190,7 +191,7 @@ impl fmt::Display for Function {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub struct BasicBlock {
     pub entry: u64,
     pub size: u64,
@@ -244,11 +245,38 @@ impl BasicBlock {
 
 impl fmt::Display for BasicBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ref_str = self.references.iter()
+                                     .map(|x| format!("0x{:X}", x).to_string())
+                                     .collect::<Vec<String>>()
+                                     .join(", ");
         let bb_str = self.instructions.iter()
                                       .map(capstone::cs_insn::to_string)
                                       .collect::<Vec<String>>()
                                       .join("\n");
-        write!(f, "{}", bb_str)
+        if ref_str.len() > 0 {
+            write!(f, "; XREF from {}\n{}", ref_str, bb_str)
+        }
+        else {
+            write!(f, "{}", bb_str)
+        }
+    }
+}
+
+impl Ord for BasicBlock {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.entry.cmp(&other.entry)
+    }
+}
+
+impl PartialOrd for BasicBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for BasicBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.entry == other.entry
     }
 }
 
