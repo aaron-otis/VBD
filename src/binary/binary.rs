@@ -56,7 +56,7 @@ pub struct Binary {
     pub sections: Vec<Section>,
     pub symbols: Vec<Symbol>,
     pub functions: Vec<Function>,
-    pub instructions: Vec<Vec<capstone::cs_insn>>,
+    pub blocks: Vec<BasicBlock>,
 }
 
 impl Binary {
@@ -65,8 +65,8 @@ impl Binary {
     }
 
     pub fn disassemble(&mut self) -> Result<(), cs_err> {
-        self.instructions = match capstone::disassemble(self){
-            Ok(instructions) => instructions,
+        self.blocks = match capstone::disassemble(self){
+            Ok(blocks) => blocks,
             Err(e) => return Err(e),
         };
         Ok(())
@@ -84,6 +84,17 @@ impl Binary {
             for ins in block {
             }
         }
+    }
+
+    pub fn instructions(&self) -> HashSet<capstone::cs_insn> {
+        let mut instructions: HashSet<capstone::cs_insn> = HashSet::new();
+
+        for block in self.blocks.clone() {
+            for instruction in block.instructions {
+                instructions.insert(instruction);
+            }
+        }
+        instructions
     }
 
     pub fn get_text_section<'c>(self) -> Result<Section, LoadError> {
@@ -209,7 +220,8 @@ impl BasicBlock {
         }
     }
 
-    pub fn split(self, addr: u64, xref: Option<u64>) -> Option<(BasicBlock, BasicBlock)> {
+    pub fn split(&self, addr: u64, xref: Option<HashSet<u64>>) ->
+      Option<(BasicBlock, BasicBlock)> {
         if addr == self.entry {
             return None;
         }
@@ -218,7 +230,7 @@ impl BasicBlock {
         let low_block = BasicBlock {
                             entry: self.entry,
                             size: addr - self.entry,
-                            references: self.references,
+                            references: self.references.clone(),
                             instructions: self.instructions[..offset - 1].to_vec()
                         };
         let high_size = self.size - low_block.size;
@@ -227,18 +239,14 @@ impl BasicBlock {
                   entry: addr,
                   size: high_size,
                   references: match xref {
-                      Some(xref) => {
-                          let mut set: HashSet<u64> = HashSet::new();
-                          set.insert(xref);
-                          set
-                      },
+                      Some(xref) => xref,
                       None => HashSet::new(),
                   },
                   instructions: self.instructions[offset..].to_vec(),
               }))
     }
 
-    pub fn contains(self, addr: u64) -> bool {
+    pub fn contains(&self, addr: u64) -> bool {
         self.entry <= addr && addr <= self.entry + self.size
     }
 }
