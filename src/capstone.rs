@@ -9,6 +9,7 @@ extern crate libc;
 
 use std::fmt;
 use std::ffi::CStr;
+use std::hash::{Hash, Hasher};
 use std::collections::{HashSet, VecDeque, HashMap, BTreeMap};
 use binary::binary::{Binary, BinaryArch, Function, Instruction, BasicBlock};
 use binary::symbol::SymbolType;
@@ -20,9 +21,9 @@ use binary::symbol::SymbolType;
  *          recursively disassembled instructions upon successful disassembly or
  *          cs_err on error.
  */
-pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
-    //let mut functions: Vec<Function> = Vec::new();
-    let mut instruction_blocks: Vec<Vec<cs_insn>> = Vec::new();
+pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
+    // Final results stored here.
+    let mut bb_result: Vec<BasicBlock> = Vec::new();
 
     // Get .text section of the binary.
     let text = match bin.clone().get_text_section() {
@@ -82,6 +83,9 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
         // Store references to each address in a map.
         let mut references: BTreeMap<u64, HashSet<u64>> = BTreeMap::new();
 
+        // Store basic blocks.
+        let mut basic_blocks: Vec<BasicBlock> = Vec::new();
+
         // Recursive disassembly.
         while !addr_queue.is_empty() {
             let (name, address, ftype) = addr_queue.pop_front()
@@ -103,12 +107,15 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
             let mut instructions: Vec<cs_insn> = Vec::new();
 
             while cs_disasm_iter(handle, pc, &mut size, &mut addr, cs_ins) {
+                // Break if we found a bad instruction.
                 if (*cs_ins).id == x86_insn_X86_INS_INVALID || (*cs_ins).size == 0 {
                     break;
                 }
 
+                // Break if we found an instruction we have previously processed.
                 if seen.contains(&(*cs_ins).address) {
-                    instruction_blocks.push(instructions);
+                    //instruction_blocks.push(instructions);
+                    basic_blocks.push(BasicBlock::new(instructions));
                     break;
                 }
 
@@ -117,8 +124,19 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
 
                 if is_cflow_ins(cs_ins) {
                     // We found the end of a basic block, Add it to the vector.
-                    //basic_blocks.push(BasicBlock{instructions: instructions});
-                    //instructions = Vec::new();
+                    basic_blocks.push(BasicBlock::new(instructions));
+
+                    /* If this instruction is not an unconditional jump, add the
+                     * next instruction to the queue.
+                     */
+                    if !is_unconditional_cflow_ins(cs_ins) {
+                        let next_addr = (*cs_ins).address + (*cs_ins).size as u64;
+                        if text.contains(next_addr) {
+                            addr_queue.push_back(("".to_string(),
+                                                  next_addr,
+                                                  FunType::Unknown));
+                        }
+                    }
 
                     match get_immediate_target(cs_ins) {
                         Some(target_addr) => {
@@ -140,21 +158,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
                         },
                         None => (),
                     };
-
-                    /* Stop printing once an unconditional control flow
-                     * instruction has been encountered.
-                     */
-                    if is_unconditional_cflow_ins(cs_ins) {
-                        // We found the end of a function, add it to the vector.
-                        instruction_blocks.push(instructions);
-                        /*
-                        functions.push(Function{name: name.clone(),
-                                                addr: addr,
-                                                comment: comment,
-                                                basic_blocks: basic_blocks});
-                         */
-                        break;
-                    }
+                    break;
                 }
                 if (*cs_ins).id == x86_insn_X86_INS_HLT {
                     break;
@@ -163,14 +167,51 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<Vec<cs_insn>>, cs_err> {
         }
 
         // Done disassembling, now make sure basic blocks are ordered and correct.
-        let mut basic_blocks: Vec<BasicBlock> = Vec::new();
+
+        // Order basic blocks by start address.
+        basic_blocks.sort();
+
+        /* Check cross references to ensure that no addresses exists within a basic
+         * block and add cross references to each basic block.
+         */
+        while !basic_blocks.is_empty() {
+            let block = basic_blocks.remove(0);
+            for (addr, xrefs) in &references {
+                // Check if addr is the entry to this block, then include xrefs if so.
+                if block.entry == *addr {
+                    bb_result.push(BasicBlock {
+                                    entry: block.entry,
+                                    size: block.size,
+                                    references: (*xrefs).clone(),
+                                    instructions: block.instructions.clone()
+                                   });
+                    break;
+                }
+                // Check if addr is contained in a block other than the entry.
+                else if block.contains(*addr) {
+                    match block.split(*addr, Some((*xrefs).clone())) {
+                        Some((block1, block2)) => {
+                            bb_result.push(block1);
+                            bb_result.push(block2);
+                        },
+                        None => bb_result.push(BasicBlock {
+                                                entry: block.entry,
+                                                size: block.size,
+                                                references: (*xrefs).clone(),
+                                                instructions: block.instructions.clone()
+                                               })
+                    }
+                    break;
+                }
+            }
+        }
 
         // Cleanup.
         cs_free(cs_ins, 1);
         cs_close(&mut handle);
     }
 
-    Ok(instruction_blocks)
+    Ok(bb_result)
 }
 
 /* Wrapper to automatically initialize capstone based on binary attributes.
@@ -252,10 +293,10 @@ fn is_cflow_ins(ins: *const cs_insn) -> bool {
 }
 
 fn is_cflow_group(group: u32) -> bool {
-    return group == cs_group_type_CS_GRP_JUMP ||
-           group == cs_group_type_CS_GRP_CALL ||
-           group == cs_group_type_CS_GRP_RET ||
-           group == cs_group_type_CS_GRP_IRET;
+    group == cs_group_type_CS_GRP_JUMP ||
+    group == cs_group_type_CS_GRP_CALL ||
+    group == cs_group_type_CS_GRP_RET ||
+    group == cs_group_type_CS_GRP_IRET
 }
 
 fn get_immediate_target(ins: *const cs_insn) -> Option<u64> {
@@ -309,3 +350,14 @@ impl PartialEq for cs_insn {
 
 // Cannot derive Eq, so must provide an impl without methods.
 impl Eq for cs_insn {}
+
+impl Hash for cs_insn {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.address.hash(state);
+        self.size.hash(state);
+        self.bytes.hash(state);
+        self.mnemonic.hash(state);
+        self.op_str.hash(state);
+    }
+}
