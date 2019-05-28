@@ -107,12 +107,8 @@ fn main() {
     if options.disam {
         match b.disassemble() {
             Ok(_) => {
-                println!("Executing crude printing!\n");
-                for block in b.instructions.clone() {
-                    for insn in block {
-                        print_ins(insn);
-                    }
-                    println!("");
+                for block in b.blocks.clone() {
+                    println!("{}\n", block);
                 }
                 println!("Successfully disassembled binary")
             },
