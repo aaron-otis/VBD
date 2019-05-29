@@ -10,8 +10,8 @@ extern crate libc;
 use std::fmt;
 use std::ffi::CStr;
 use std::hash::{Hash, Hasher};
-use std::collections::{HashSet, VecDeque, HashMap, BTreeMap};
-use binary::binary::{Binary, BinaryArch, Function, Instruction, BasicBlock};
+use std::collections::{HashSet, VecDeque, BTreeMap};
+use binary::binary::{Binary, BinaryArch, BasicBlock};
 use binary::symbol::SymbolType;
 
 /* Disassembles a binary. Currently only supports disassembling the .text section.
@@ -88,18 +88,22 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
 
         // Recursive disassembly.
         while !addr_queue.is_empty() {
-            let (name, address, ftype) = addr_queue.pop_front()
+            let (_name, address, _ftype) = addr_queue.pop_front()
                                                    .expect("addr_queue");
             let mut addr = address;
             match seen.get(&addr) {
                 Some(_) => continue,
                 _ =>  (),
             }
+
+            /* This code is for function creation, which is not yet implemented.
             let comment = match ftype {
                 FunType::Symbol => format!("{}: ; sym@0x{:013x}", name, addr),
                 FunType::Section => format!("{} ; sec@0x{:013x}", name, addr),
                 FunType::Unknown => format!("; fun@0x{:013x}", addr),
             };
+            */
+
             let offset = addr - text.vma;
             let pc = &mut text.bytes.as_ptr().offset(offset as isize);
             let mut size = (text.size - offset) as usize;
@@ -166,8 +170,6 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
             }
         }
 
-        // Done disassembling, now make sure basic blocks are ordered and correct.
-
         // Order basic blocks by start address.
         basic_blocks.sort();
 
@@ -177,6 +179,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
         while !basic_blocks.is_empty() {
             let mut found_xrefs: bool = false;
             let block = basic_blocks.remove(0);
+
             for (addr, xrefs) in &references {
                 // Check if addr is the entry to this block, then include xrefs if so.
                 if block.entry == *addr {
