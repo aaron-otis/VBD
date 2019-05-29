@@ -15,7 +15,6 @@ use statistics::{count_instructions, print_statistics};
 //use binary::symbol::{print_symbols};
 use argparse::{ArgumentParser, StoreTrue, Store};
 use std::{env, process};
-use capstone::print_ins;
 
 struct Options {
     fname: String,
