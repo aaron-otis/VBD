@@ -175,6 +175,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
          * block and add cross references to each basic block.
          */
         while !basic_blocks.is_empty() {
+            let mut found_xrefs: bool = false;
             let block = basic_blocks.remove(0);
             for (addr, xrefs) in &references {
                 // Check if addr is the entry to this block, then include xrefs if so.
@@ -185,6 +186,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
                                     references: (*xrefs).clone(),
                                     instructions: block.instructions.clone()
                                    });
+                    found_xrefs = true;
                     break;
                 }
                 // Check if addr is contained in a block other than the entry.
@@ -201,8 +203,12 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
                                                 instructions: block.instructions.clone()
                                                })
                     }
+                    found_xrefs = true;
                     break;
                 }
+            }
+            if !found_xrefs {
+                bb_result.push(block);
             }
         }
 
