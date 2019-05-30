@@ -8,6 +8,7 @@ pub mod bgen_bfd;
 pub mod capstone;
 pub mod util;
 pub mod statistics;
+pub mod graphs;
 
 use binary::binary::Binary;
 use statistics::{count_instructions, print_statistics};
@@ -109,6 +110,11 @@ fn main() {
                 for block in b.blocks.clone() {
                     println!("{}\n", block);
                 }
+                let cfg = b.cfg();
+                for edge in cfg.edges {
+                    print!("({:x}, {:x}), ", edge.0, edge.1);
+                }
+                println!("");
                 println!("Successfully disassembled binary")
             },
             Err(e) => println!("Error disassembling: {}", e),
