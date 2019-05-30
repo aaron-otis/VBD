@@ -330,40 +330,51 @@ impl Instruction {
         }
     }
 
-    pub fn is_cflow_ins(id: u32) -> bool {
-        if id == capstone::x86_insn_X86_INS_CALL ||
-           id == capstone::x86_insn_X86_INS_ENTER ||
-           id == capstone::x86_insn_X86_INS_INT ||
-           id == capstone::x86_insn_X86_INS_INTO ||
-           id == capstone::x86_insn_X86_INS_IRET ||
-           id == capstone::x86_insn_X86_INS_JA ||
-           id == capstone::x86_insn_X86_INS_JAE ||
-           id == capstone::x86_insn_X86_INS_JB ||
-           id == capstone::x86_insn_X86_INS_JBE ||
-           id == capstone::x86_insn_X86_INS_JCXZ ||
-           id == capstone::x86_insn_X86_INS_JE ||
-           id == capstone::x86_insn_X86_INS_JECXZ ||
-           id == capstone::x86_insn_X86_INS_JG ||
-           id == capstone::x86_insn_X86_INS_JGE ||
-           id == capstone::x86_insn_X86_INS_JL ||
-           id == capstone::x86_insn_X86_INS_JLE ||
-           id == capstone::x86_insn_X86_INS_JMP ||
-           id == capstone::x86_insn_X86_INS_JNE ||
-           id == capstone::x86_insn_X86_INS_JNO ||
-           id == capstone::x86_insn_X86_INS_JNP ||
-           id == capstone::x86_insn_X86_INS_JNS ||
-           id == capstone::x86_insn_X86_INS_JO ||
-           id == capstone::x86_insn_X86_INS_JP ||
-           id == capstone::x86_insn_X86_INS_JRCXZ ||
-           id == capstone::x86_insn_X86_INS_JS ||
-           id == capstone::x86_insn_X86_INS_LJMP ||
-           id == capstone::x86_insn_X86_INS_RETF ||
-           id == capstone::x86_insn_X86_INS_RETFQ ||
-           id == capstone::x86_insn_X86_INS_RET {
-            return true;
+    pub fn is_unconditional_cflow_ins(&self) -> bool {
+        self.id == capstone::x86_insn_X86_INS_JMP ||
+        self.id == capstone::x86_insn_X86_INS_LJMP ||
+        self.id == capstone::x86_insn_X86_INS_RET ||
+        self.id == capstone::x86_insn_X86_INS_RETF ||
+        self.id == capstone::x86_insn_X86_INS_RETFQ
+    }
+
+    /* Determines whether or not an instruction changes control flow of the program.
+     *
+     * Input: A constant pointer to a cs_insn.
+     * Output: A boolean value.
+     */
+    fn is_cflow_ins(&self) -> bool {
+        for group in &self.detail.groups {
+            if self.is_cflow_group(*group as u32) {
+                return true;
+            }
         }
         false
+    }
 
+    fn is_cflow_group(&self, group: u32) -> bool {
+        group == cs_group_type_CS_GRP_JUMP ||
+        group == cs_group_type_CS_GRP_CALL ||
+        group == cs_group_type_CS_GRP_RET ||
+        group == cs_group_type_CS_GRP_IRET
+    }
+
+    pub fn get_immediate_target(&self) -> Option<u64> {
+        unsafe {
+            let mut op: &capstone::cs_x86_op;
+
+            for i in 0..self.detail.groups_count as usize {
+                if self.is_cflow_group(self.detail.groups[i].into()) {
+                    for j in 0..self.detail.__bindgen_anon_1.x86.op_count {
+                        op = &self.detail.__bindgen_anon_1.x86.operands[j as usize];
+                        if (*op).type_ == x86_op_type_X86_OP_IMM {
+                            return Some((*op).__bindgen_anon_1.imm as u64);
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 }
 
