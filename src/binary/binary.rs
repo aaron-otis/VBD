@@ -10,6 +10,7 @@ use bfd::load_binary;
 use std::ffi::CStr;
 use std::collections::HashSet;
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 use super::section::*;
 use super::symbol::*;
 use super::super::util::print_bytes;
@@ -90,8 +91,8 @@ impl Binary {
     /*
      * Returns a HashSet of cs_insn representing the unique instructions of a binary.
      */
-    pub fn instructions(&self) -> HashSet<capstone::cs_insn> {
-        let mut instructions: HashSet<capstone::cs_insn> = HashSet::new();
+    pub fn instructions(&self) -> HashSet<Instruction> {
+        let mut instructions: HashSet<Instruction> = HashSet::new();
 
         for block in self.blocks.clone() {
             for instruction in block.instructions {
@@ -101,9 +102,11 @@ impl Binary {
         instructions
     }
 
+    /*
     pub fn cfg(&self) -> graphs::CFG {
         graphs::CFG::new(&self.blocks)
     }
+    */
 
     pub fn detect_loops(&self) {
     }
@@ -218,11 +221,11 @@ pub struct BasicBlock {
     pub entry: u64,
     pub size: u64,
     pub references: HashSet<u64>,
-    pub instructions: Vec<capstone::cs_insn>,
+    pub instructions: Vec<Instruction>,
 }
 
 impl BasicBlock {
-    pub fn new(instructions: Vec<capstone::cs_insn>) -> BasicBlock {
+    pub fn new(instructions: Vec<Instruction>) -> BasicBlock {
         BasicBlock {
             entry: instructions[0].address,
             size: instructions.len() as u64,
@@ -269,7 +272,7 @@ impl fmt::Display for BasicBlock {
                                      .collect::<Vec<String>>()
                                      .join(", ");
         let bb_str = self.instructions.iter()
-                                      .map(capstone::cs_insn::to_string)
+                                      .map(Instruction::to_string)
                                       .collect::<Vec<String>>()
                                       .join("\n");
         if ref_str.len() > 0 {
@@ -299,6 +302,7 @@ impl PartialEq for BasicBlock {
     }
 }
 
+#[derive(Clone, Eq)]
 pub struct Instruction {
     pub id: u32,
     pub address: u64,
@@ -379,5 +383,25 @@ impl fmt::Display for Instruction {
         ins_str.push_str(&format!(" {} {}", self.mnemonic, self.op_str));
 
         write!(f, "{}", ins_str)
+    }
+}
+
+impl PartialEq for Instruction {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.address == other.address &&
+        self.size == other.size && self.bytes == other.bytes &&
+        self.mnemonic == other.mnemonic && self.op_str == other.op_str &&
+        self.detail == other.detail
+    }
+}
+
+impl Hash for Instruction {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.address.hash(state);
+        self.size.hash(state);
+        self.bytes.hash(state);
+        self.mnemonic.hash(state);
+        self.op_str.hash(state);
     }
 }
