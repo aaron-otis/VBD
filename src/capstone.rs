@@ -17,9 +17,7 @@ use binary::symbol::SymbolType;
 /* Disassembles a binary. Currently only supports disassembling the .text section.
  *
  * Input:   A reference to a Binary object, bin.
- * Output:  A vector of vectors of capstone::cs_insn each representing
- *          recursively disassembled instructions upon successful disassembly or
- *          cs_err on error.
+ * Output:  A vector of BasicBlock upon successful disassembly or cs_err on error.
  */
 pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
     // Final results stored here.
@@ -187,7 +185,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
                                     entry: block.entry,
                                     size: block.size,
                                     references: (*xrefs).clone(),
-                                    instructions: block.instructions.clone()
+                                    instructions: block.instructions.clone(),
                                    });
                     found_xrefs = true;
                     break;
@@ -203,7 +201,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
                                                 entry: block.entry,
                                                 size: block.size,
                                                 references: (*xrefs).clone(),
-                                                instructions: block.instructions.clone()
+                                                instructions: block.instructions.clone(),
                                                })
                     }
                     found_xrefs = true;
@@ -276,8 +274,11 @@ pub fn print_ins(ins: cs_insn) {
 
 /* Check if an instruction is an unconditional control flow type
  * (i.e a jump).
+ *
+ * Input: A constant pointer to a cs_insn.
+ * Output: A boolean value.
  */
-fn is_unconditional_cflow_ins(ins: *const cs_insn) -> bool {
+pub fn is_unconditional_cflow_ins(ins: *const cs_insn) -> bool {
     let id: u32;
 
     unsafe {
@@ -289,11 +290,15 @@ fn is_unconditional_cflow_ins(ins: *const cs_insn) -> bool {
            id == x86_insn_X86_INS_RETFQ;
 }
 
+/* Determines whether or not an instruction changes control flow of the program.
+ *
+ * Input: A constant pointer to a cs_insn.
+ * Output: A boolean value.
+ */
 fn is_cflow_ins(ins: *const cs_insn) -> bool {
     unsafe {
-        for i in 0..(*(*ins).detail).groups_count as usize {
-            let group = (*(*ins).detail).groups[i];
-            if is_cflow_group(group.into()) {
+        for group in &(*(*ins).detail).groups {
+            if is_cflow_group(*group as u32) {
                 return true;
             }
         }
@@ -301,14 +306,14 @@ fn is_cflow_ins(ins: *const cs_insn) -> bool {
     false
 }
 
-fn is_cflow_group(group: u32) -> bool {
+pub fn is_cflow_group(group: u32) -> bool {
     group == cs_group_type_CS_GRP_JUMP ||
     group == cs_group_type_CS_GRP_CALL ||
     group == cs_group_type_CS_GRP_RET ||
     group == cs_group_type_CS_GRP_IRET
 }
 
-fn get_immediate_target(ins: *const cs_insn) -> Option<u64> {
+pub fn get_immediate_target(ins: *const cs_insn) -> Option<u64> {
     unsafe {
         let mut op: *mut cs_x86_op;
 
@@ -325,6 +330,11 @@ fn get_immediate_target(ins: *const cs_insn) -> Option<u64> {
     }
     None
 }
+
+impl cs_insn {
+    pub fn test() {}
+}
+
 
 impl fmt::Display for cs_insn {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
