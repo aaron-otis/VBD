@@ -300,12 +300,64 @@ impl PartialEq for BasicBlock {
 }
 
 pub struct Instruction {
-    pub instruction: capstone::cs_insn,
+    pub id: u32,
+    pub address: u64,
+    pub size: u16,
+    pub bytes: [u8; 16usize],
+    pub mnemonic: String,
+    pub op_str: String,
+    pub detail: capstone::cs_detail,
 }
 
 impl Instruction {
-    pub fn new(ins: capstone::cs_insn) -> Instruction {
-        Instruction{instruction: ins}
+    pub fn new(insn: capstone::cs_insn) -> Instruction {
+        Instruction{
+            id: insn.id,
+            address: insn.address,
+            size: insn.size,
+            bytes: insn.bytes,
+            mnemonic: CStr::from_ptr(insn.mnemonic.as_ptr()).to_string_lossy()
+                                                     .to_string(),
+            op_str: CStr::from_ptr(insn.op_str.as_ptr()).to_string_lossy()
+                                                           .to_string(),
+            detail: (*insn.detail).clone()
+        }
+    }
+
+    pub fn is_cflow_ins(id: u32) -> bool {
+        if id == capstone::x86_insn_X86_INS_CALL ||
+           id == capstone::x86_insn_X86_INS_ENTER ||
+           id == capstone::x86_insn_X86_INS_INT ||
+           id == capstone::x86_insn_X86_INS_INTO ||
+           id == capstone::x86_insn_X86_INS_IRET ||
+           id == capstone::x86_insn_X86_INS_JA ||
+           id == capstone::x86_insn_X86_INS_JAE ||
+           id == capstone::x86_insn_X86_INS_JB ||
+           id == capstone::x86_insn_X86_INS_JBE ||
+           id == capstone::x86_insn_X86_INS_JCXZ ||
+           id == capstone::x86_insn_X86_INS_JE ||
+           id == capstone::x86_insn_X86_INS_JECXZ ||
+           id == capstone::x86_insn_X86_INS_JG ||
+           id == capstone::x86_insn_X86_INS_JGE ||
+           id == capstone::x86_insn_X86_INS_JL ||
+           id == capstone::x86_insn_X86_INS_JLE ||
+           id == capstone::x86_insn_X86_INS_JMP ||
+           id == capstone::x86_insn_X86_INS_JNE ||
+           id == capstone::x86_insn_X86_INS_JNO ||
+           id == capstone::x86_insn_X86_INS_JNP ||
+           id == capstone::x86_insn_X86_INS_JNS ||
+           id == capstone::x86_insn_X86_INS_JO ||
+           id == capstone::x86_insn_X86_INS_JP ||
+           id == capstone::x86_insn_X86_INS_JRCXZ ||
+           id == capstone::x86_insn_X86_INS_JS ||
+           id == capstone::x86_insn_X86_INS_LJMP ||
+           id == capstone::x86_insn_X86_INS_RETF ||
+           id == capstone::x86_insn_X86_INS_RETFQ ||
+           id == capstone::x86_insn_X86_INS_RET {
+            return true;
+        }
+        false
+
     }
 }
 
@@ -313,22 +365,16 @@ impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut ins_str = String::new();
 
-        unsafe {
-            ins_str.push_str(&format!("0x{:013x} ", self.instruction.address));
-            for i in 0..16 {
-                if i < self.instruction.size as usize {
-                    ins_str.push_str(&format!("{:02x}", self.instruction.bytes[i]));
-                }
-                else {
-                    ins_str.push_str(&format!("  "));
-                }
+        ins_str.push_str(&format!("0x{:013x} ", self.address));
+        for i in 0..16 {
+            if i < self.size as usize {
+                ins_str.push_str(&format!("{:02x}", self.bytes[i]));
             }
-            let mnemonic = CStr::from_ptr(self.instruction.mnemonic.as_ptr())
-                                 .to_string_lossy();
-            let op_str = CStr::from_ptr(self.instruction.op_str.as_ptr())
-                               .to_string_lossy();
-            ins_str.push_str(&format!(" {} {}", mnemonic, op_str));
+            else {
+                ins_str.push_str(&format!("  "));
+            }
         }
+        ins_str.push_str(&format!(" {} {}", self.mnemonic, self.op_str));
 
         write!(f, "{}", ins_str)
     }
