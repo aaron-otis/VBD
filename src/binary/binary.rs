@@ -102,11 +102,9 @@ impl Binary {
         instructions
     }
 
-    /*
     pub fn cfg(&self) -> graphs::CFG {
         graphs::CFG::new(&self.blocks)
     }
-    */
 
     pub fn detect_loops(&self) {
     }
@@ -343,7 +341,7 @@ impl Instruction {
      * Input: A constant pointer to a cs_insn.
      * Output: A boolean value.
      */
-    fn is_cflow_ins(&self) -> bool {
+    pub fn is_cflow_ins(&self) -> bool {
         for group in &self.detail.groups {
             if self.is_cflow_group(*group as u32) {
                 return true;
