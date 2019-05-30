@@ -14,6 +14,7 @@ use super::section::*;
 use super::symbol::*;
 use super::super::util::print_bytes;
 use super::super::capstone;
+use super::super::graphs;
 
 pub enum LoadError {
     SectionNotFound,
@@ -73,19 +74,22 @@ impl Binary {
     }
 
     pub fn analyze(&self) {
-        let instruction_blocks = capstone::disassemble(self);
-        let mut functions: Vec<Function> = Vec::new();
+        // Need a control flow graph for this.
 
+        // Detect strings. TODO
 
-        for block in instruction_blocks {
-            let mut basic_blocks: Vec<BasicBlock> = Vec::new();
-            let mut instructions: Vec<Instruction> = Vec::new();
+        // Detect constants. TODO
 
-            for ins in block {
-            }
-        }
+        // Analyze instructions.
+
+        /*
+         * Detect loops.
+         */
     }
 
+    /*
+     * Returns a HashSet of cs_insn representing the unique instructions of a binary.
+     */
     pub fn instructions(&self) -> HashSet<capstone::cs_insn> {
         let mut instructions: HashSet<capstone::cs_insn> = HashSet::new();
 
@@ -95,6 +99,13 @@ impl Binary {
             }
         }
         instructions
+    }
+
+    pub fn cfg(&self) -> graphs::CFG {
+        graphs::CFG::new(&self.blocks)
+    }
+
+    pub fn detect_loops(&self) {
     }
 
     pub fn get_text_section<'c>(self) -> Result<Section, LoadError> {
@@ -216,7 +227,7 @@ impl BasicBlock {
             entry: instructions[0].address,
             size: instructions.len() as u64,
             references: HashSet::new(),
-            instructions: instructions
+            instructions: instructions,
         }
     }
 
@@ -231,7 +242,7 @@ impl BasicBlock {
                             entry: self.entry,
                             size: addr - self.entry,
                             references: self.references.clone(),
-                            instructions: self.instructions[..offset - 1].to_vec()
+                            instructions: self.instructions[..offset - 1].to_vec(),
                         };
         let high_size = self.size - low_block.size;
         Some((low_block,
