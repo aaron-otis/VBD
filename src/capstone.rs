@@ -11,7 +11,7 @@ use std::fmt;
 use std::ffi::CStr;
 use std::hash::{Hash, Hasher};
 use std::collections::{HashSet, VecDeque, BTreeMap};
-use binary::binary::{Binary, BinaryArch, BasicBlock};
+use binary::binary::{Binary, BinaryArch, BasicBlock, Instruction};
 use binary::symbol::SymbolType;
 
 /* Disassembles a binary. Currently only supports disassembling the .text section.
@@ -106,7 +106,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
             let pc = &mut text.bytes.as_ptr().offset(offset as isize);
             let mut size = (text.size - offset) as usize;
 
-            let mut instructions: Vec<cs_insn> = Vec::new();
+            let mut instructions: Vec<Instruction> = Vec::new();
 
             while cs_disasm_iter(handle, pc, &mut size, &mut addr, cs_ins) {
                 // Break if we found a bad instruction.
@@ -122,16 +122,16 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
                 }
 
                 seen.insert((*cs_ins).address);
-                instructions.push(*cs_ins);
+                instructions.push(Instruction::new(*cs_ins));
 
-                if is_cflow_ins(cs_ins) {
+                if (*cs_ins).is_cflow_ins() {
                     // We found the end of a basic block, Add it to the vector.
                     basic_blocks.push(BasicBlock::new(instructions));
 
                     /* If this instruction is not an unconditional jump, add the
                      * next instruction to the queue.
                      */
-                    if !is_unconditional_cflow_ins(cs_ins) {
+                    if !(*cs_ins).is_unconditional_cflow_ins() {
                         let next_addr = (*cs_ins).address + (*cs_ins).size as u64;
                         if text.contains(next_addr) {
                             addr_queue.push_back(("".to_string(),
@@ -140,7 +140,7 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
                         }
                     }
 
-                    match get_immediate_target(cs_ins) {
+                    match (*cs_ins).get_immediate_target() {
                         Some(target_addr) => {
                             // Add the target address to the set of seen addresses.
                             match seen.get(&target_addr) {
@@ -272,67 +272,61 @@ pub fn print_ins(ins: cs_insn) {
     }
 }
 
-/* Check if an instruction is an unconditional control flow type
- * (i.e a jump).
- *
- * Input: A constant pointer to a cs_insn.
- * Output: A boolean value.
- */
-pub fn is_unconditional_cflow_ins(ins: *const cs_insn) -> bool {
-    let id: u32;
+impl cs_insn {
+    /* Check if an instruction is an unconditional control flow type
+     * (i.e a jump).
+     *
+     * Input: A constant pointer to a cs_insn.
+     * Output: A boolean value.
+     */
+    pub fn is_unconditional_cflow_ins(&self) -> bool {
+        let id: u32 = self.id;
 
-    unsafe {
-        id = (*ins).id;
+        return id == x86_insn_X86_INS_JMP || id == x86_insn_X86_INS_LJMP ||
+               id == x86_insn_X86_INS_RET || id == x86_insn_X86_INS_RETF ||
+               id == x86_insn_X86_INS_RETFQ;
     }
 
-    return id == x86_insn_X86_INS_JMP || id == x86_insn_X86_INS_LJMP ||
-           id == x86_insn_X86_INS_RET || id == x86_insn_X86_INS_RETF ||
-           id == x86_insn_X86_INS_RETFQ;
-}
-
-/* Determines whether or not an instruction changes control flow of the program.
- *
- * Input: A constant pointer to a cs_insn.
- * Output: A boolean value.
- */
-fn is_cflow_ins(ins: *const cs_insn) -> bool {
-    unsafe {
-        for group in &(*(*ins).detail).groups {
-            if is_cflow_group(*group as u32) {
-                return true;
+    /* Determines whether or not an instruction changes control flow of the program.
+     *
+     * Input: A constant pointer to a cs_insn.
+     * Output: A boolean value.
+     */
+    fn is_cflow_ins(&self) -> bool {
+        unsafe {
+            for group in &(*self.detail).groups {
+                if self.is_cflow_group(*group as u32) {
+                    return true;
+                }
             }
         }
+        false
     }
-    false
-}
 
-pub fn is_cflow_group(group: u32) -> bool {
-    group == cs_group_type_CS_GRP_JUMP ||
-    group == cs_group_type_CS_GRP_CALL ||
-    group == cs_group_type_CS_GRP_RET ||
-    group == cs_group_type_CS_GRP_IRET
-}
+    fn is_cflow_group(&self, group: u32) -> bool {
+        group == cs_group_type_CS_GRP_JUMP ||
+        group == cs_group_type_CS_GRP_CALL ||
+        group == cs_group_type_CS_GRP_RET ||
+        group == cs_group_type_CS_GRP_IRET
+    }
 
-pub fn get_immediate_target(ins: *const cs_insn) -> Option<u64> {
-    unsafe {
-        let mut op: *mut cs_x86_op;
+    pub fn get_immediate_target(&self) -> Option<u64> {
+        unsafe {
+            let mut op: *mut cs_x86_op;
 
-        for i in 0..(*(*ins).detail).groups_count as usize {
-            if is_cflow_group((*(*ins).detail).groups[i].into()) {
-                for j in 0..(*(*ins).detail).__bindgen_anon_1.x86.op_count {
-                    op = &mut (*(*ins).detail).__bindgen_anon_1.x86.operands[j as usize];
-                    if (*op).type_ == x86_op_type_X86_OP_IMM {
-                        return Some((*op).__bindgen_anon_1.imm as u64);
+            for i in 0..(*self.detail).groups_count as usize {
+                if self.is_cflow_group((*self.detail).groups[i].into()) {
+                    for j in 0..(*self.detail).__bindgen_anon_1.x86.op_count {
+                        op = &mut (*self.detail).__bindgen_anon_1.x86.operands[j as usize];
+                        if (*op).type_ == x86_op_type_X86_OP_IMM {
+                            return Some((*op).__bindgen_anon_1.imm as u64);
+                        }
                     }
                 }
             }
         }
+        None
     }
-    None
-}
-
-impl cs_insn {
-    pub fn test() {}
 }
 
 
@@ -380,3 +374,16 @@ impl Hash for cs_insn {
         self.op_str.hash(state);
     }
 }
+
+impl PartialEq for cs_detail {
+    fn eq(&self, other: &Self) -> bool {
+        self.regs_read == other.regs_read &&
+        self.regs_read_count == other.regs_read_count &&
+        self.regs_write == other.regs_write &&
+        self.regs_write_count == other.regs_write_count &&
+        self.groups == other.groups &&
+        self.groups_count == other.groups_count
+    }
+}
+
+impl Eq for cs_detail {}
