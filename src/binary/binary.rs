@@ -311,16 +311,18 @@ pub struct Instruction {
 
 impl Instruction {
     pub fn new(insn: capstone::cs_insn) -> Instruction {
-        Instruction{
-            id: insn.id,
-            address: insn.address,
-            size: insn.size,
-            bytes: insn.bytes,
-            mnemonic: CStr::from_ptr(insn.mnemonic.as_ptr()).to_string_lossy()
-                                                     .to_string(),
-            op_str: CStr::from_ptr(insn.op_str.as_ptr()).to_string_lossy()
-                                                           .to_string(),
-            detail: (*insn.detail).clone()
+        unsafe {
+            Instruction{
+                id: insn.id,
+                address: insn.address,
+                size: insn.size,
+                bytes: insn.bytes,
+                mnemonic: CStr::from_ptr(insn.mnemonic.as_ptr()).to_string_lossy()
+                                                         .to_string(),
+                op_str: CStr::from_ptr(insn.op_str.as_ptr()).to_string_lossy()
+                                                               .to_string(),
+                detail: (*insn.detail).clone()
+            }
         }
     }
 
