@@ -331,6 +331,7 @@ impl Instruction {
     pub fn is_unconditional_cflow_ins(&self) -> bool {
         self.id == capstone::x86_insn_X86_INS_JMP ||
         self.id == capstone::x86_insn_X86_INS_LJMP ||
+        self.id == capstone::x86_insn_X86_INS_CALL ||
         self.id == capstone::x86_insn_X86_INS_RET ||
         self.id == capstone::x86_insn_X86_INS_RETF ||
         self.id == capstone::x86_insn_X86_INS_RETFQ
