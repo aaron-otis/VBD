@@ -1,10 +1,11 @@
-use binary::binary::{BasicBlock, Instruction};
+use std::collections::HashSet;
+use binary::binary::BasicBlock;
 use capstone;
 
 pub struct CFG<'a> {
     pub start: u64,
     pub end: u64,
-    pub edges: Vec<(u64, u64)>,
+    pub edges: HashSet<(u64, u64)>,
     pub vertices: &'a Vec<BasicBlock>
 }
 
@@ -21,17 +22,16 @@ impl CFG<'_> {
             }
     }
 
-    fn detect_edges(blocks: &[BasicBlock]) -> Vec<(u64, u64)> {
-        let mut edges: Vec<(u64, u64)> = Vec::new();
+    fn detect_edges(blocks: &[BasicBlock]) -> HashSet<(u64, u64)> {
+        let mut edges: HashSet<(u64, u64)> = HashSet::new();
 
-        /* Determine edges by iterating through each block to find the addresses
+        /* Create a partial edge set.
+         * Determine edges by iterating through each block to find the addresses
          * the block can change control to.
          */
         for block in blocks {
-            // Get last instruction in the block.
             let last_insn = &block.instructions[block.instructions.len() - 1];
             let next_insn = last_insn.address + last_insn.size as u64;
-            //println!("{}", last_insn);
 
             /* If the last instruction is a control flow changing instruction, we
              * want to add and edge from the current block to the block containing
@@ -40,10 +40,10 @@ impl CFG<'_> {
             if last_insn.is_cflow_ins() {
                 let target = last_insn.get_immediate_target();
 
-                // We can only handle immediate targets and fail on all others.
+                // We currently can only handle immediate targets and fail on all others.
                 match target {
-                    Some(addr) => edges.push((block.entry, addr)),
-                    None => (),
+                    Some(addr) => edges.insert((block.entry, addr)),
+                    None => true,
                 };
 
                 /* If this instruction is not an unconditional control flow changing
@@ -52,7 +52,7 @@ impl CFG<'_> {
                  */
                 if !last_insn.is_unconditional_cflow_ins() {
                     if CFG::block_exists(blocks, next_insn) {
-                        edges.push((block.entry, next_insn));
+                        edges.insert((block.entry, next_insn));
                     }
                 }
 
@@ -61,7 +61,7 @@ impl CFG<'_> {
              * to the next sequential block.
              */
             else {
-                edges.push((block.entry, next_insn));
+                edges.insert((block.entry, next_insn));
             }
         }
 
