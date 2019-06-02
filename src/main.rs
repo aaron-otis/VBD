@@ -110,11 +110,15 @@ fn main() {
                 for block in b.blocks.clone() {
                     println!("{}\n", block);
                 }
-                let cfg = b.cfg();
-                for edge in cfg.edges {
-                    print!("({:x}, {:x}), ", edge.0, edge.1);
-                }
-                println!("");
+                match b.cfg() {
+                    Some(cfg) => {
+                        for edge in cfg.edges {
+                            print!("{}, ", edge);
+                        }
+                        println!("");
+                    },
+                    None => (),
+                };
                 println!("Successfully disassembled binary")
             },
             Err(e) => println!("Error disassembling: {}", e),
