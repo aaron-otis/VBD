@@ -172,7 +172,6 @@ impl CFG<'_> {
                                  */
                                 edges.remove(&Edge::new(block.entry, addr));
                                 edges.insert(Edge::new(block.entry, next_insn));
-                                println!("Replaced (0x{:x}, 0x{:x}) with (0x{:x}, 0x{:x})",
                                          block.entry, addr, block.entry, next_insn);
                             }
                         }
@@ -186,7 +185,6 @@ impl CFG<'_> {
             }
         }
 
-        println!("# of edges: {}", edges.len());
         edges
     }
 
@@ -214,7 +212,6 @@ impl CFG<'_> {
             // Ensure the stack has a value.
             match ret_stack.pop() {
                 Some(ret_addr) => {
-                    println!("Found 0x{:x} on the stack", ret_addr);
                     new_edges.insert(Edge::new(block.entry, ret_addr));
                 },
                 None => (),
