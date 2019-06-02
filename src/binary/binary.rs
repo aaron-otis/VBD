@@ -251,7 +251,6 @@ impl BasicBlock {
             return None;
         }
 
-        println!("offset: {}", offset);
         let low_block = BasicBlock {
                             entry: self.entry,
                             size: addr - self.entry,
@@ -272,7 +271,6 @@ impl BasicBlock {
     }
 
     pub fn contains(&self, addr: u64) -> bool {
-        println!("checking 0x{:x}: entry: 0x{:x}, end: 0x{:x}", addr, self.entry, self.entry + self.size);
         self.entry <= addr && addr < self.entry + self.size
     }
 
