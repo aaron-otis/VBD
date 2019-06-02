@@ -102,8 +102,8 @@ impl Binary {
         instructions
     }
 
-    pub fn cfg(&self) -> graphs::CFG {
-        graphs::CFG::new(&self.blocks)
+    pub fn cfg(&self) -> Option<graphs::CFG> {
+        graphs::CFG::new(self)
     }
 
     pub fn detect_loops(&self) {
@@ -226,7 +226,7 @@ impl BasicBlock {
     pub fn new(instructions: Vec<Instruction>) -> BasicBlock {
         BasicBlock {
             entry: instructions[0].address,
-            size: instructions.len() as u64,
+            size: instructions.iter().fold(0, |acc, ins| acc + ins.size) as u64,
             references: HashSet::new(),
             instructions: instructions,
         }
@@ -238,7 +238,20 @@ impl BasicBlock {
             return None;
         }
 
-        let offset: usize = (addr - self.entry) as usize;
+        let mut offset: usize = 0;
+        let mut found_offset: bool = false;
+        for mut i in 0..self.instructions.len() - 1 {
+            if self.instructions[i].address == addr {
+                offset = i;
+                found_offset = true;
+                break;
+            }
+        }
+        if !found_offset {
+            return None;
+        }
+
+        println!("offset: {}", offset);
         let low_block = BasicBlock {
                             entry: self.entry,
                             size: addr - self.entry,
@@ -259,7 +272,8 @@ impl BasicBlock {
     }
 
     pub fn contains(&self, addr: u64) -> bool {
-        self.entry <= addr && addr <= self.entry + self.size
+        println!("checking 0x{:x}: entry: 0x{:x}, end: 0x{:x}", addr, self.entry, self.entry + self.size);
+        self.entry <= addr && addr < self.entry + self.size
     }
 
     pub fn returns(&self) -> bool {
@@ -267,6 +281,11 @@ impl BasicBlock {
 
         insn.has_group(x86_insn_group_X86_GRP_RET) ||
         insn.has_group(x86_insn_group_X86_GRP_IRET)
+    }
+
+    pub fn has_call(&self) -> bool {
+        self.instructions[self.instructions.len() - 1].id ==
+            capstone::x86_insn_X86_INS_CALL
     }
 }
 
