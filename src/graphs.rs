@@ -172,7 +172,6 @@ impl CFG<'_> {
                                  */
                                 edges.remove(&Edge::new(block.entry, addr));
                                 edges.insert(Edge::new(block.entry, next_insn));
-                                         block.entry, addr, block.entry, next_insn);
                             }
                         }
 
