@@ -261,6 +261,13 @@ impl BasicBlock {
     pub fn contains(&self, addr: u64) -> bool {
         self.entry <= addr && addr <= self.entry + self.size
     }
+
+    pub fn returns(&self) -> bool {
+        let insn = &self.instructions[self.instructions.len() - 1];
+
+        insn.has_group(x86_insn_group_X86_GRP_RET) ||
+        insn.has_group(x86_insn_group_X86_GRP_IRET)
+    }
 }
 
 impl fmt::Display for BasicBlock {
@@ -374,6 +381,15 @@ impl Instruction {
             }
         }
         None
+    }
+
+    pub fn has_group(&self, group: u32) -> bool {
+        for grp in &self.detail.groups {
+            if *grp as u32 == group {
+                return true;
+            }
+        }
+        false
     }
 }
 
