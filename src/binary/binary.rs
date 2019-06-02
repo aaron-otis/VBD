@@ -255,7 +255,7 @@ impl BasicBlock {
                             entry: self.entry,
                             size: addr - self.entry,
                             references: self.references.clone(),
-                            instructions: self.instructions[..offset - 1].to_vec(),
+                            instructions: self.instructions[..offset].to_vec(),
                         };
         let high_size = self.size - low_block.size;
         Some((low_block,
