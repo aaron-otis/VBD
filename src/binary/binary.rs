@@ -324,6 +324,18 @@ impl PartialEq for BasicBlock {
     }
 }
 
+impl Hash for BasicBlock {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.entry.hash(state);
+    }
+}
+
+impl graphs::Vertex for BasicBlock {
+    fn get_id(&self) -> u64 {
+        self.entry
+    }
+}
+
 #[derive(Clone, Eq)]
 pub struct Instruction {
     pub id: u32,
