@@ -4,6 +4,11 @@ use binary::binary::{Binary, BasicBlock};
 use binary::section::Section;
 use capstone;
 
+pub trait Graph {
+    fn get_successors(&self, addr: u64) -> HashSet<Edge>;
+    fn get_predecessors(&self, addr: u64) -> HashSet<Edge>;
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Edge {
     pub entry: u64,
@@ -45,30 +50,6 @@ impl CFG<'_> {
                   edges: edges,
                   vertices: &bin.blocks
                   })
-    }
-
-    pub fn get_successors(&self, addr: u64) -> HashSet<Edge> {
-        let mut successors: HashSet<Edge> = HashSet::new();
-
-        for edge in &self.edges {
-            if edge.entry == addr {
-                successors.insert(edge.clone());
-            }
-        }
-
-        successors
-    }
-
-    pub fn get_predecessors(&self, addr: u64) -> HashSet<Edge> {
-        let mut predecessors: HashSet<Edge> = HashSet::new();
-
-        for edge in &self.edges {
-            if edge.exit == addr {
-                predecessors.insert(edge.clone());
-            }
-        }
-
-        predecessors
     }
 
     pub fn get_block(&self, addr: u64) -> Option<&BasicBlock> {
@@ -245,5 +226,31 @@ impl CFG<'_> {
         }
 
         new_edges
+    }
+}
+
+impl Graph for CFG<'_> {
+    fn get_successors(&self, addr: u64) -> HashSet<Edge> {
+        let mut successors: HashSet<Edge> = HashSet::new();
+
+        for edge in &self.edges {
+            if edge.entry == addr {
+                successors.insert(edge.clone());
+            }
+        }
+
+        successors
+    }
+
+    fn get_predecessors(&self, addr: u64) -> HashSet<Edge> {
+        let mut predecessors: HashSet<Edge> = HashSet::new();
+
+        for edge in &self.edges {
+            if edge.exit == addr {
+                predecessors.insert(edge.clone());
+            }
+        }
+
+        predecessors
     }
 }
