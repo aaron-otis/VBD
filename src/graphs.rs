@@ -4,9 +4,39 @@ use binary::binary::{Binary, BasicBlock};
 use binary::section::Section;
 use capstone;
 
-pub trait Graph {
-    fn get_successors(&self, addr: u64) -> HashSet<Edge>;
-    fn get_predecessors(&self, addr: u64) -> HashSet<Edge>;
+pub trait Vertex {
+    fn get_id(&self) -> u64;
+}
+
+pub trait Graph<V: Vertex> {
+    fn get_edges(&self) -> &HashSet<Edge>;
+    fn add_edge(&mut self, edge: Edge) -> bool;
+    fn get_vertices(&self) -> HashSet<V>;
+    fn add_vertex(&mut self, vertex: V) -> bool;
+
+    fn get_successors(&self, addr: u64) -> HashSet<Edge> {
+        let mut successors: HashSet<Edge> = HashSet::new();
+
+        for edge in self.get_edges() {
+            if edge.entry == addr {
+                successors.insert(edge.clone());
+            }
+        }
+
+        successors
+    }
+
+    fn get_predecessors(&self, addr: u64) -> HashSet<Edge> {
+        let mut predecessors: HashSet<Edge> = HashSet::new();
+
+        for edge in self.get_edges() {
+            if edge.exit == addr {
+                predecessors.insert(edge.clone());
+            }
+        }
+
+        predecessors
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -229,46 +259,89 @@ impl CFG<'_> {
     }
 }
 
-impl Graph for CFG<'_> {
-    fn get_successors(&self, addr: u64) -> HashSet<Edge> {
-        let mut successors: HashSet<Edge> = HashSet::new();
-
-        for edge in &self.edges {
-            if edge.entry == addr {
-                successors.insert(edge.clone());
-            }
-        }
-
-        successors
+impl Graph<BasicBlock> for CFG<'_> {
+    fn get_edges(&self) -> &HashSet<Edge> {
+        &self.edges
     }
 
-    fn get_predecessors(&self, addr: u64) -> HashSet<Edge> {
-        let mut predecessors: HashSet<Edge> = HashSet::new();
+    fn add_edge(&mut self, edge: Edge) -> bool {
+        true
+    }
 
-        for edge in &self.edges {
-            if edge.exit == addr {
-                predecessors.insert(edge.clone());
-            }
+    fn get_vertices(&self) -> HashSet<BasicBlock> {
+        let mut vertices: HashSet<BasicBlock> = HashSet::new();
+
+        for vertex in self.vertices {
+            vertices.insert(vertex.clone());
         }
 
-        predecessors
+        vertices
+    }
+
+    fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
+        true
     }
 }
 
 pub struct DominatorTree<'a> {
+    pub start: u64,
     pub vertices: &'a Vec<BasicBlock>,
     pub edges: HashSet<Edge>,
-    pub cfg: &'a CFG<'a>,
+    pub cfg: CFG<'a>,
 }
 
 impl<'a> DominatorTree<'a> {
-    pub fn new(cfg: &'a CFG) -> DominatorTree<'a> {
+    pub fn new(cfg: CFG<'a>, start: u64) -> DominatorTree<'a> {
         let mut edges: HashSet<Edge> = HashSet::new();
 
-        DominatorTree {vertices: cfg.vertices, edges: edges, cfg: cfg}
+        DominatorTree {start: start, vertices: cfg.vertices, edges: edges, cfg: cfg}
     }
 
-    pub fn sdom(&self, addr: u64) {
+    pub fn is_sdom(&self, x: u64, y: u64) -> bool {
+        false
+    }
+
+    pub fn sdoms(&self, addr: u64) {
+        //self.edges.iter().filter(|&&e| self.is_sdom(addr, e)).collect()
+    }
+
+    pub fn is_idom(&self, x: u64, y: u64) -> bool {
+        false
+    }
+
+    pub fn idoms(&self, addr: u64) {
+        //self.edges.iter().filter(|&&e| self.is_idom(addr, e)).collect()
+    }
+
+    pub fn from_binary(bin: &'a Binary, start: u64) -> Option<DominatorTree<'a>> {
+        match bin.cfg() {
+            Some(cfg) => Some(DominatorTree::new(cfg, start)),
+            None => None,
+        }
+    }
+}
+
+impl Graph<BasicBlock> for DominatorTree<'_> {
+    fn get_edges(&self) -> &HashSet<Edge> {
+        &self.edges
+    }
+
+    fn add_edge(&mut self, edge: Edge) -> bool {
+        true
+    }
+
+    fn get_vertices(&self) -> HashSet<BasicBlock> {
+        let mut vertices: HashSet<BasicBlock> = HashSet::new();
+
+        for vertex in self.vertices {
+            vertices.insert(vertex.clone());
+        }
+
+        vertices
+    }
+
+    fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
+        true
     }
 }
 
@@ -278,13 +351,13 @@ pub struct DJGraph<'a> {
 }
 
 impl<'a> DJGraph<'_> {
-    pub fn from_cfg(cfg: &'a CFG) -> DJGraph<'a> {
-        let dom_tree: DominatorTree<'a> = DominatorTree::new(cfg);
+    pub fn from_cfg(cfg: CFG<'a>, start: u64) -> DJGraph<'a> {
+        let dom_tree: DominatorTree<'a> = DominatorTree::new(cfg, start);
         let mut edges = dom_tree.edges.clone();
 
         // Add J edges.
 
-        DJGraph {vertices: cfg.vertices, edges: edges}
+        DJGraph {vertices: dom_tree.vertices, edges: edges}
     }
 
     pub fn from_dom_tree(dom_tree: DominatorTree) -> DJGraph {
@@ -294,4 +367,34 @@ impl<'a> DJGraph<'_> {
 
         DJGraph {vertices: dom_tree.vertices, edges: edges}
     }
+}
+
+impl Graph<BasicBlock> for DJGraph<'_> {
+    fn get_edges(&self) -> &HashSet<Edge> {
+        &self.edges
+    }
+
+    fn add_edge(&mut self, edge: Edge) -> bool {
+        true
+    }
+
+    fn get_vertices(&self) -> HashSet<BasicBlock> {
+        let mut vertices: HashSet<BasicBlock> = HashSet::new();
+
+        for vertex in self.vertices {
+            vertices.insert(vertex.clone());
+        }
+
+        vertices
+    }
+
+    fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
+        true
+    }
+}
+
+pub fn dfs<G: Graph<BasicBlock>>(graph: G) {
+}
+
+pub fn dfs_ordering<G: Graph<BasicBlock>>(graph: G) {
 }
