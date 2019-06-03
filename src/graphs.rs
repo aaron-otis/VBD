@@ -254,3 +254,36 @@ impl Graph for CFG<'_> {
         predecessors
     }
 }
+
+pub struct DominatorTree<'a> {
+    pub vertices: &'a Vec<BasicBlock>,
+    pub edges: HashSet<Edge>,
+    cfg: &'a CFG<'a>,
+}
+
+impl<'a> DominatorTree<'a> {
+    pub fn new(cfg: &'a CFG) -> DominatorTree<'a> {
+        let mut edges: HashSet<Edge> = HashSet::new();
+
+        DominatorTree {vertices: cfg.vertices, edges: edges, cfg: cfg}
+    }
+
+    pub fn sdom(&self, addr: u64) {
+    }
+}
+
+pub struct DJGraph<'a> {
+    dom_tree: DominatorTree<'a>,
+}
+
+impl<'a> DJGraph<'_> {
+    pub fn from_cfg(cfg: &'a CFG) -> DJGraph<'a> {
+        let dom_tree: DominatorTree<'a> = DominatorTree::new(cfg);
+
+        DJGraph {dom_tree: dom_tree}
+    }
+
+    pub fn from_dom_tree(dom_tree: DominatorTree) -> DJGraph {
+        DJGraph {dom_tree: dom_tree}
+    }
+}
