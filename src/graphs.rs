@@ -258,7 +258,7 @@ impl Graph for CFG<'_> {
 pub struct DominatorTree<'a> {
     pub vertices: &'a Vec<BasicBlock>,
     pub edges: HashSet<Edge>,
-    cfg: &'a CFG<'a>,
+    pub cfg: &'a CFG<'a>,
 }
 
 impl<'a> DominatorTree<'a> {
@@ -273,17 +273,25 @@ impl<'a> DominatorTree<'a> {
 }
 
 pub struct DJGraph<'a> {
-    dom_tree: DominatorTree<'a>,
+    pub vertices: &'a Vec<BasicBlock>,
+    pub edges: HashSet<Edge>,
 }
 
 impl<'a> DJGraph<'_> {
     pub fn from_cfg(cfg: &'a CFG) -> DJGraph<'a> {
         let dom_tree: DominatorTree<'a> = DominatorTree::new(cfg);
+        let mut edges = dom_tree.edges.clone();
 
-        DJGraph {dom_tree: dom_tree}
+        // Add J edges.
+
+        DJGraph {vertices: cfg.vertices, edges: edges}
     }
 
     pub fn from_dom_tree(dom_tree: DominatorTree) -> DJGraph {
-        DJGraph {dom_tree: dom_tree}
+        let mut edges = dom_tree.edges.clone();
+
+        // Add J edges.
+
+        DJGraph {vertices: dom_tree.vertices, edges: edges}
     }
 }
