@@ -240,7 +240,7 @@ impl BasicBlock {
 
         let mut offset: usize = 0;
         let mut found_offset: bool = false;
-        for mut i in 0..self.instructions.len() - 1 {
+        for i in 0..self.instructions.len() - 1 {
             if self.instructions[i].address == addr {
                 offset = i;
                 found_offset = true;
