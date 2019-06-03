@@ -160,7 +160,7 @@ impl CFG<'_> {
                                 let mut stack: Vec<u64> = Vec::new();
                                 stack.push(next_insn);
 
-                                for edge in CFG::dfs(addr, &cfg, &mut seen, stack) {
+                                for edge in CFG::ret_walk(addr, &cfg, &mut seen, stack) {
                                     edges.insert(edge);
                                 }
                             }
@@ -196,7 +196,7 @@ impl CFG<'_> {
         false
     }
 
-    fn dfs(addr: u64, graph: &CFG, seen: &mut HashSet<u64>,
+    fn ret_walk(addr: u64, graph: &CFG, seen: &mut HashSet<u64>,
               mut ret_stack: Vec<u64>) -> HashSet<Edge> {
         let mut new_edges: HashSet<Edge> = HashSet::new();
 
@@ -238,7 +238,7 @@ impl CFG<'_> {
                     None => (),
                 };
 
-                for new_edge in CFG::dfs(edge.exit, graph, seen, ret_stack.clone()) {
+                for new_edge in CFG::ret_walk(edge.exit, graph, seen, ret_stack.clone()) {
                     new_edges.insert(new_edge);
                 }
             }
