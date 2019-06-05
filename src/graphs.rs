@@ -208,57 +208,6 @@ impl CFG {
         }
         false
     }
-
-    fn ret_walk(addr: u64, graph: &CFG, seen: &mut HashSet<u64>,
-              mut ret_stack: Vec<u64>) -> HashSet<Edge> {
-        let mut new_edges: HashSet<Edge> = HashSet::new();
-
-        // Try to get the block with entry 'addr'.
-        let block = match graph.get_block(addr) {
-            Some(block) => block,
-            None => return new_edges,
-        };
-
-        // Base case.
-        if block.returns() {
-            // Ensure the stack has a value.
-            match ret_stack.pop() {
-                Some(ret_addr) => {
-                    new_edges.insert(Edge::new(block.entry, ret_addr));
-                },
-                None => (),
-            };
-            return new_edges;
-        }
-
-        // Recursively search this block's successors.
-        for addr in graph.get_successors(block.entry) {
-            // Prevent infinite loops by checking if this block has been seen.
-            if !seen.contains(&addr) {
-                seen.insert(addr);
-
-                // If the next block calls a function, push return address on the stack.
-                match graph.get_block(addr) {
-                    Some(b) => if b.has_call() {
-                        match b.instructions.last() {
-                            Some(insn) => match insn.get_immediate_target() {
-                                Some(target) => ret_stack.push(target),
-                                None => (),
-                            },
-                            None => (),
-                        };
-                    },
-                    None => (),
-                };
-
-                for new_edge in CFG::ret_walk(addr, graph, seen, ret_stack.clone()) {
-                    new_edges.insert(new_edge);
-                }
-            }
-        }
-
-        new_edges
-    }
 }
 
 impl Graph<BasicBlock> for CFG {
