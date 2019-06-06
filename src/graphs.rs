@@ -40,6 +40,10 @@ pub trait Graph<V: Vertex> {
     }
 }
 
+pub trait Tree {
+    fn get_level(&self, addr: u64) -> u64;
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Edge {
     pub entry: u64,
