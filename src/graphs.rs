@@ -346,10 +346,20 @@ impl Graph<BasicBlock> for DJGraph {
     }
 }
 
-type Ordering = Vec<(u64, u64)>;
+type Ordering = Vec<u64>;
 
-pub fn dfs<G: Graph<BasicBlock>>(graph: G) -> Ordering {
+pub fn dfs<G: Graph<BasicBlock>>(graph: &G, root: u64,
+                                 seen: &mut HashSet<u64>) -> Ordering {
     let mut order: Ordering = Vec::new();
+
+    order.push(root);
+    seen.insert(root);
+
+    for successor in graph.get_successors(root) {
+        if !seen.contains(&successor) {
+            order.append(&mut dfs(graph, successor, seen));
+        }
+    }
 
     order
 }
