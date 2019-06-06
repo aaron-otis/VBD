@@ -13,6 +13,7 @@ pub trait Graph<V: Vertex> {
     fn add_edge(&mut self, edge: Edge) -> bool;
     fn get_vertices(&self) -> Vec<V>;
     fn add_vertex(&mut self, vertex: V) -> bool;
+    fn root(&self) -> u64;
 
     fn get_successors(&self, addr: u64) -> Vec<u64> {
         let mut successors: Vec<u64> = Vec::new();
@@ -216,7 +217,7 @@ impl Graph<BasicBlock> for CFG {
     }
 
     fn add_edge(&mut self, edge: Edge) -> bool {
-        true
+        self.edges.insert(edge)
     }
 
     fn get_vertices(&self) -> Vec<BasicBlock> {
@@ -224,7 +225,12 @@ impl Graph<BasicBlock> for CFG {
     }
 
     fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
+        self.vertices.push(vertex);
         true
+    }
+
+    fn root(&self) -> u64 {
+        self.start
     }
 }
 
@@ -286,9 +292,14 @@ impl Graph<BasicBlock> for DominatorTree {
         self.vertices.push(vertex);
         true
     }
+
+    fn root(&self) -> u64 {
+        self.start
+    }
 }
 
 pub struct DJGraph {
+    pub start: u64,
     pub vertices: Vec<BasicBlock>,
     pub edges: HashSet<Edge>,
 }
@@ -300,7 +311,7 @@ impl DJGraph {
 
         // Add J edges.
 
-        DJGraph {vertices: dom_tree.vertices, edges: edges}
+        DJGraph {start: dom_tree.start, vertices: dom_tree.vertices, edges: edges}
     }
 
     pub fn from_dom_tree(dom_tree: DominatorTree) -> DJGraph {
@@ -308,7 +319,7 @@ impl DJGraph {
 
         // Add J edges.
 
-        DJGraph {vertices: dom_tree.vertices, edges: edges}
+        DJGraph {start: dom_tree.start, vertices: dom_tree.vertices, edges: edges}
     }
 }
 
@@ -318,7 +329,7 @@ impl Graph<BasicBlock> for DJGraph {
     }
 
     fn add_edge(&mut self, edge: Edge) -> bool {
-        true
+        self.edges.insert(edge)
     }
 
     fn get_vertices(&self) -> Vec<BasicBlock> {
@@ -326,24 +337,22 @@ impl Graph<BasicBlock> for DJGraph {
     }
 
     fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
+        self.vertices.push(vertex);
         true
     }
-}
 
-pub fn dfs<G: Graph<BasicBlock>>(graph: G) {
-}
-
-pub fn dfs_ordering<G: Graph<BasicBlock>>(graph: G) {
-}
-
-pub fn connected_components<G: Graph<BasicBlock>>(graph: G) -> Vec<HashSet<BasicBlock>> {
-    let components: Vec<HashSet<BasicBlock>> = Vec::new();
-
-    let vertices = graph.get_vertices();
-    for i in 0..vertices.len() - 1 {
-        let predecessors = graph.get_predecessors(vertices[i].entry);
-        let successors = graph.get_successors(vertices[i].entry);
+    fn root(&self) -> u64 {
+        self.start
     }
-
-    components
 }
+
+type Ordering = Vec<(u64, u64)>;
+
+pub fn dfs<G: Graph<BasicBlock>>(graph: G) -> Ordering {
+    let mut order: Ordering = Vec::new();
+
+    order
+}
+
+//pub fn connected_components<G: Graph<BasicBlock>>(graph: G) -> Vec<Component> {
+//}
