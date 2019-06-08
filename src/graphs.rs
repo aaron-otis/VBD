@@ -374,20 +374,9 @@ impl DominatorTree {
         panic!("Could not find immediate dominator for 0x{:x}", vertex);
     }
 
-    pub fn is_sdom(&self, x: u64, y: u64) -> bool {
-        false
-    }
-
-    pub fn sdoms(&self, addr: u64) {
-        //self.edges.iter().filter(|&&e| self.is_sdom(addr, e)).collect()
-    }
-
+    /* Returns true if x = idom(y) and false otherwise. */
     pub fn is_idom(&self, x: u64, y: u64) -> bool {
-        false
-    }
-
-    pub fn idoms(&self, addr: u64) {
-        //self.edges.iter().filter(|&&e| self.is_idom(addr, e)).collect()
+        self.edges.contains(&Edge::new(x, y))
     }
 
     pub fn from_binary(bin: &Binary, start: u64) -> Option<DominatorTree> {
@@ -428,16 +417,8 @@ pub struct DJGraph {
 }
 
 impl DJGraph {
-    pub fn from_cfg(cfg: CFG, start: u64) -> DJGraph {
+    pub fn new(cfg: CFG, start: u64) -> DJGraph {
         let dom_tree: DominatorTree = DominatorTree::new(cfg, start);
-        let mut edges = dom_tree.edges.clone();
-
-        // Add J edges.
-
-        DJGraph {start: dom_tree.root, vertices: dom_tree.vertices, edges: edges}
-    }
-
-    pub fn from_dom_tree(dom_tree: DominatorTree) -> DJGraph {
         let mut edges = dom_tree.edges.clone();
 
         // Add J edges.
