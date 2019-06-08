@@ -259,7 +259,7 @@ impl Graph<BasicBlock> for CFG {
 }
 
 pub struct DominatorTree {
-    pub start: u64,
+    pub root: u64,
     pub vertices: Vec<BasicBlock>,
     pub edges: HashSet<Edge>,
     pub cfg: CFG,
@@ -356,7 +356,7 @@ impl DominatorTree {
         }
         println!("\n*** End of Debugging ***");
 
-        DominatorTree {start: start, vertices: cfg.vertices.clone(), edges: edges,
+        DominatorTree {root: start, vertices: cfg.vertices.clone(), edges: edges,
                        cfg: cfg}
     }
 
@@ -417,7 +417,7 @@ impl Graph<BasicBlock> for DominatorTree {
     }
 
     fn root(&self) -> u64 {
-        self.start
+        self.root
     }
 }
 
@@ -434,7 +434,7 @@ impl DJGraph {
 
         // Add J edges.
 
-        DJGraph {start: dom_tree.start, vertices: dom_tree.vertices, edges: edges}
+        DJGraph {start: dom_tree.root, vertices: dom_tree.vertices, edges: edges}
     }
 
     pub fn from_dom_tree(dom_tree: DominatorTree) -> DJGraph {
@@ -442,7 +442,7 @@ impl DJGraph {
 
         // Add J edges.
 
-        DJGraph {start: dom_tree.start, vertices: dom_tree.vertices, edges: edges}
+        DJGraph {start: dom_tree.root, vertices: dom_tree.vertices, edges: edges}
     }
 }
 
