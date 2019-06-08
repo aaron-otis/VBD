@@ -1,5 +1,6 @@
 use std::fmt;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::iter::FromIterator;
 use binary::binary::{Binary, BasicBlock};
 use binary::section::Section;
 use capstone;
@@ -54,6 +55,10 @@ impl Edge {
     pub fn new(entry: u64, exit: u64) -> Edge {
         Edge {entry: entry, exit: exit}
     }
+
+    pub fn contains(&self, addr: u64) -> bool {
+        self.entry == addr || self.exit == addr
+    }
 }
 
 impl fmt::Display for Edge {
@@ -81,7 +86,7 @@ impl CFG {
         let edges = CFG::detect_edges(bin.blocks.as_slice(), &text);
 
         Some(CFG {start: bin.blocks[0].entry,
-                  end: bin.blocks[last_block].instructions[last_insn].address,
+                  end: bin.blocks[last_block].entry,
                   edges: edges,
                   vertices: bin.blocks.clone()
                   })
@@ -94,6 +99,21 @@ impl CFG {
             }
         }
         None
+    }
+
+    pub fn subgraph(&self, root: u64) -> CFG {
+        let order = dfs(self, root, &mut HashSet::new());
+        let vertices: Vec<BasicBlock> = self.vertices.iter()
+                                            .filter(|b| order.contains(&b.entry))
+                                            .cloned()
+                                            .collect();
+        let edges = self.edges.iter()
+                              .filter(|e| order.contains(&e.entry) ||
+                                          order.contains(&e.exit))
+                              .cloned()
+                              .collect();
+
+        CFG {start: root, end: 0, edges: edges, vertices: vertices}
     }
 
     fn detect_edges(blocks: &[BasicBlock], text: &Section) -> HashSet<Edge> {
@@ -246,13 +266,112 @@ pub struct DominatorTree {
 }
 
 impl DominatorTree {
+    /* Requires 'cfg' to be fully connected. */
     pub fn new(cfg: CFG, start: u64) -> DominatorTree {
-        let mut edges: HashSet<Edge> = HashSet::new();
+        let block_entries: Vec<u64> = cfg.vertices
+                                             .iter()
+                                             .map(|b| b.entry)
+                                             .collect();
 
-        // Iteratively build Dominator tree.
+        // Initialize Dom[s] = {s} and Dom[v] = V for v in V - {s}.
+        let mut dominators: HashMap<u64, HashSet<u64>> = HashMap::new();
+        let mut start_dom: HashSet<u64> = HashSet::new();
+        start_dom.insert(start);
+        dominators.insert(start, start_dom);
+        for vertex in &cfg.vertices {
+            if vertex.entry != start {
+                dominators.insert(vertex.entry,
+                                  HashSet::from_iter(block_entries.iter().cloned()));
+            }
+        }
+
+        /* Iteratively build Dominator tree.
+         */
+        let mut updated_dominators = true;
+        while updated_dominators {
+            updated_dominators = false;
+
+            for vertex in &block_entries {
+                let mut dom_set: HashSet<u64> = HashSet::new();
+                dom_set.insert(*vertex);
+
+                let mut intersect: HashSet<u64> = HashSet::new();
+                for predecessor in cfg.get_predecessors(*vertex) {
+                    if intersect.is_empty() {
+                        intersect = dominators[&predecessor].clone();
+                    }
+                    else {
+                        intersect = intersect.intersection(&dominators[&predecessor])
+                                             .cloned()
+                                             .collect();
+                    }
+                }
+
+                dom_set = dom_set.union(&intersect).cloned().collect();
+                if dom_set != dominators[&vertex] {
+                    updated_dominators = true;
+                    match dominators.get_mut(vertex) {
+                        Some(set) => *set = dom_set,
+                        _ => panic!("Did not find block entry {}.", *vertex),
+                    };
+                }
+            }
+        }
+
+        println!("*** DominatorTree Debugging Output ***");
+        println!("Dominators:");
+        for (addr, doms) in &dominators {
+            print!("0x{:x} => {}", addr, "{");
+            for d in doms {
+                print!("0x{:x}, ", d);
+            }
+            println!("{}", "}");
+        }
+        println!("");
+
+        let mut edges: HashSet<Edge> = HashSet::new();
+        for vertex in &block_entries {
+            let mut doms = dominators[vertex].clone();
+            if !doms.remove(vertex) {
+                panic!("Vertex 0x{:x} not its own dominator", vertex);
+            }
+            print!("sdoms(0x{:x}): ", vertex);
+            for d in doms {
+                print!("0x{:x}, ", d);
+            }
+            println!("");
+        }
+
+        println!("\nImmediate dominators:");
+        for addr in block_entries {
+            if addr != start {
+                edges.insert(Edge::new(DominatorTree::idom(addr, &dominators), addr));
+                println!("idom(0x{:x}) = 0x{:x}", addr,
+                         DominatorTree::idom(addr, &dominators));
+            }
+        }
+        println!("\nCreated {} edges", edges.len());
+        for edge in &edges {
+            print!("{}, ", edge);
+        }
+        println!("\n*** End of Debugging ***");
 
         DominatorTree {start: start, vertices: cfg.vertices.clone(), edges: edges,
                        cfg: cfg}
+    }
+
+    fn idom(vertex: u64, dominators: &HashMap<u64, HashSet<u64>>) -> u64 {
+        let sdoms: HashSet<u64> = dominators[&vertex].iter()
+                                                     .filter(|&&d| d != vertex)
+                                                     .cloned()
+                                                     .collect();
+        for dom in &sdoms {
+            if dominators[dom] == sdoms {
+                return *dom;
+            }
+        }
+
+        panic!("Could not find immediate dominator for 0x{:x}", vertex);
     }
 
     pub fn is_sdom(&self, x: u64, y: u64) -> bool {
