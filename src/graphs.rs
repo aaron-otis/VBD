@@ -46,14 +46,28 @@ pub trait Tree {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
+pub enum EdgeType {
+    Directed,
+    UnDirected,
+    DEdge,
+    BJEdge,
+    CJEdge,
+    SPBack,
+    SPTree,
+    SPForward,
+    SPCross,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Edge {
     pub entry: u64,
     pub exit: u64,
+    pub edge_type: EdgeType,
 }
 
 impl Edge {
-    pub fn new(entry: u64, exit: u64) -> Edge {
-        Edge {entry: entry, exit: exit}
+    pub fn new(entry: u64, exit: u64, edge_type: EdgeType) -> Edge {
+        Edge {entry: entry, exit: exit, edge_type}
     }
 
     pub fn contains(&self, addr: u64) -> bool {
@@ -136,7 +150,8 @@ impl CFG {
 
                 // We currently can only handle immediate targets and fail on all others.
                 match target {
-                    Some(addr) => edges.insert(Edge::new(block.entry, addr)),
+                    Some(addr) => edges.insert(Edge::new(block.entry, addr,
+                                                         EdgeType::Directed)),
                     None => true,
                 };
 
@@ -146,7 +161,8 @@ impl CFG {
                  */
                 if !last_insn.is_unconditional_cflow_ins() {
                     if CFG::block_exists(blocks, next_insn) {
-                        edges.insert(Edge::new(block.entry, next_insn));
+                        edges.insert(Edge::new(block.entry, next_insn,
+                                               EdgeType::Directed));
                     }
                 }
 
@@ -155,7 +171,7 @@ impl CFG {
              * to the next sequential block.
              */
             else {
-                edges.insert(Edge::new(block.entry, next_insn));
+                edges.insert(Edge::new(block.entry, next_insn, EdgeType::Directed));
             }
         }
 
@@ -208,15 +224,18 @@ impl CFG {
                                  * just place an edge from the calling block to the
                                  * block the function would have returned to.
                                  */
-                                edges.remove(&Edge::new(block.entry, addr));
-                                edges.insert(Edge::new(block.entry, next_insn));
+                                edges.remove(&Edge::new(block.entry, addr,
+                                                        EdgeType::Directed));
+                                edges.insert(Edge::new(block.entry, next_insn,
+                                                       EdgeType::Directed));
                             }
                         }
 
                     },
                     // If 'target' cannot be resolved, add a pseudo fall through edge.
                     None => if CFG::block_exists(blocks, next_insn) {
-                        edges.insert(Edge::new(block.entry, next_insn));
+                        edges.insert(Edge::new(block.entry, next_insn,
+                                               EdgeType::Directed));
                     },
                 };
             }
@@ -342,10 +361,12 @@ impl DominatorTree {
             println!("");
         }
 
+        // Add each (idom(x), x) edge.
         println!("\nImmediate dominators:");
         for addr in block_entries {
             if addr != start {
-                edges.insert(Edge::new(DominatorTree::idom(addr, &dominators), addr));
+                edges.insert(Edge::new(DominatorTree::idom(addr, &dominators), addr,
+                                       EdgeType::DEdge));
                 println!("idom(0x{:x}) = 0x{:x}", addr,
                          DominatorTree::idom(addr, &dominators));
             }
@@ -376,7 +397,7 @@ impl DominatorTree {
 
     /* Returns true if x = idom(y) and false otherwise. */
     pub fn is_idom(&self, x: u64, y: u64) -> bool {
-        self.edges.contains(&Edge::new(x, y))
+        self.edges.contains(&Edge::new(x, y, EdgeType::DEdge))
     }
 
     pub fn from_binary(bin: &Binary, start: u64) -> Option<DominatorTree> {
