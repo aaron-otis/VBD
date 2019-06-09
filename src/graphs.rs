@@ -58,6 +58,23 @@ pub enum EdgeType {
     SPCross,
 }
 
+impl fmt::Display for EdgeType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            EdgeType::Directed => "Directed",
+            EdgeType::UnDirected => "Undirected",
+            EdgeType::DEdge => "D",
+            EdgeType::BJEdge => "BJ",
+            EdgeType::CJEdge => "CJ",
+            EdgeType::SPBack => "sp-back",
+            EdgeType::SPTree => "sp-tree",
+            EdgeType::SPForward => "sp-forward",
+            EdgeType::SPCross => "sp-cross",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Edge {
     pub entry: u64,
@@ -77,7 +94,7 @@ impl Edge {
 
 impl fmt::Display for Edge {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "(0x{:x}, 0x{:x})", self.entry, self.exit)
+        write!(f, "<{} edge (0x{:x}, 0x{:x})>", self.edge_type, self.entry, self.exit)
     }
 }
 
@@ -282,11 +299,12 @@ pub struct DominatorTree {
     pub vertices: Vec<BasicBlock>,
     pub edges: HashSet<Edge>,
     pub cfg: CFG,
+    pub dominators: HashMap<u64, HashSet<u64>>
 }
 
 impl DominatorTree {
     /* Requires 'cfg' to be fully connected. */
-    pub fn new(cfg: CFG, start: u64) -> DominatorTree {
+    pub fn new(cfg: &CFG, start: u64) -> DominatorTree {
         let block_entries: Vec<u64> = cfg.vertices
                                              .iter()
                                              .map(|b| b.entry)
@@ -378,7 +396,7 @@ impl DominatorTree {
         println!("\n*** End of Debugging ***");
 
         DominatorTree {root: start, vertices: cfg.vertices.clone(), edges: edges,
-                       cfg: cfg}
+                       cfg: cfg.clone(), dominators: dominators}
     }
 
     fn idom(vertex: u64, dominators: &HashMap<u64, HashSet<u64>>) -> u64 {
@@ -400,9 +418,18 @@ impl DominatorTree {
         self.edges.contains(&Edge::new(x, y, EdgeType::DEdge))
     }
 
+    pub fn dominates(&self, x: u64, y: u64) -> bool {
+        print!("Is 0x{:x} a dominator of 0x{:x}? Dominators for 0x{:x}: ", x, y, y);
+        for dom in &self.dominators[&y] {
+            print!("0x{:x}, ", dom);
+        }
+        println!("");
+        self.dominators[&y].contains(&x)
+    }
+
     pub fn from_binary(bin: &Binary, start: u64) -> Option<DominatorTree> {
         match bin.cfg() {
-            Some(cfg) => Some(DominatorTree::new(cfg, start)),
+            Some(cfg) => Some(DominatorTree::new(&cfg, start)),
             None => None,
         }
     }
@@ -438,11 +465,24 @@ pub struct DJGraph {
 }
 
 impl DJGraph {
-    pub fn new(cfg: CFG, start: u64) -> DJGraph {
-        let dom_tree: DominatorTree = DominatorTree::new(cfg, start);
+    pub fn new(cfg: &CFG, start: u64) -> DJGraph {
+        let dom_tree: DominatorTree = DominatorTree::new(&cfg, start);
         let mut edges = dom_tree.edges.clone();
 
         // Add J edges.
+        for edge in &cfg.edges {
+            // Ignore D edges.
+            if !edges.contains(&Edge::new(edge.entry, edge.exit, EdgeType::DEdge)) {
+                // A BJ edge is a J edge (x, y) where y dom x.
+                if dom_tree.dominates(edge.exit, edge.entry) {
+                    edges.insert(Edge::new(edge.entry, edge.exit, EdgeType::BJEdge));
+                }
+                // All other J edges are CJ edges.
+                else {
+                    edges.insert(Edge::new(edge.entry, edge.exit, EdgeType::CJEdge));
+                }
+            }
+        }
 
         DJGraph {start: dom_tree.root, vertices: dom_tree.vertices, edges: edges}
     }
