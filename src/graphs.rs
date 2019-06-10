@@ -1,5 +1,5 @@
 use std::fmt;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::iter::FromIterator;
 use binary::binary::{Binary, BasicBlock};
 use binary::section::Section;
@@ -294,9 +294,35 @@ impl Graph<BasicBlock> for CFG {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct DominatorVertex<V: Vertex> {
+    pub level: u64,
+    pub vertex: V
+}
+
+impl DominatorVertex<BasicBlock> {
+    pub fn new(block: BasicBlock, level: u64) -> DominatorVertex<BasicBlock> {
+        DominatorVertex {level: level, vertex: block}
+    }
+}
+
+impl Vertex for DominatorVertex<BasicBlock> {
+    fn get_id(&self) -> u64 {
+        self.vertex.entry
+    }
+}
+
+impl fmt::Display for DominatorVertex<BasicBlock> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<Vertex 0x{:x} @ level {}>", self.vertex.entry, self.level)
+    }
+}
+
+#[derive(Clone)]
 pub struct DominatorTree {
     pub root: u64,
-    pub vertices: Vec<BasicBlock>,
+    pub max_level: u64,
+    pub vertices: Vec<DominatorVertex<BasicBlock>>,
     pub edges: HashSet<Edge>,
     pub cfg: CFG,
     pub dominators: HashMap<u64, HashSet<u64>>
@@ -306,9 +332,9 @@ impl DominatorTree {
     /* Requires 'cfg' to be fully connected. */
     pub fn new(cfg: &CFG, start: u64) -> DominatorTree {
         let block_entries: Vec<u64> = cfg.vertices
-                                             .iter()
-                                             .map(|b| b.entry)
-                                             .collect();
+                                         .iter()
+                                         .map(|b| b.entry)
+                                         .collect();
 
         // Initialize Dom[s] = {s} and Dom[v] = V for v in V - {s}.
         let mut dominators: HashMap<u64, HashSet<u64>> = HashMap::new();
@@ -366,7 +392,7 @@ impl DominatorTree {
         }
         println!("");
 
-        let mut edges: HashSet<Edge> = HashSet::new();
+        /*
         for vertex in &block_entries {
             let mut doms = dominators[vertex].clone();
             if !doms.remove(vertex) {
@@ -378,9 +404,11 @@ impl DominatorTree {
             }
             println!("");
         }
+        */
 
-        // Add each (idom(x), x) edge.
         println!("\nImmediate dominators:");
+        // Add each (idom(x), x) edge.
+        let mut edges: HashSet<Edge> = HashSet::new();
         for addr in block_entries {
             if addr != start {
                 edges.insert(Edge::new(DominatorTree::idom(addr, &dominators), addr,
@@ -395,8 +423,51 @@ impl DominatorTree {
         }
         println!("\n*** End of Debugging ***");
 
-        DominatorTree {root: start, vertices: cfg.vertices.clone(), edges: edges,
-                       cfg: cfg.clone(), dominators: dominators}
+        // Create set of DominatorVertex to preserve level information.
+        let mut dom_vertices: Vec<DominatorVertex<BasicBlock>> = Vec::new();
+        let mut max_level: u64 = 0;
+
+        let mut queue: VecDeque<(u64, u64)> = VecDeque::new();
+        queue.push_back((start, 0));
+
+        let mut seen: HashSet<u64> = HashSet::new();
+        seen.insert(start);
+
+        while !queue.is_empty() {
+            let (vertex, level) = match queue.pop_front() {
+                Some((vertex, level)) => (vertex, level),
+                None => panic!("Pop failed from nonempty queue")
+            };
+
+            if level > max_level {
+                max_level = level;
+            }
+
+            // Add a queue item to the DominatorVertex set.
+            match cfg.vertices.iter().position(|b| b.entry == vertex) {
+                Some(i) => dom_vertices.push(DominatorVertex::new(cfg.vertices[i].clone(),
+                                                                  level)),
+                None => panic!("Node 0x{:x} not in set of basic blocks!", vertex),
+            };
+            /* Iterate through all D edges that originate from this vertex and add
+             * them to the queue.
+             */
+            for edge in edges.iter()
+                             .filter(|&e| e.edge_type == EdgeType::DEdge &&
+                                          e.entry == vertex)
+                             .cloned()
+                             .collect::<Vec<_>>() {
+                //if !seen.contains(&edge.entry) {
+                queue.push_back((edge.exit, level + 1));
+                    //seen.insert(edge.entry);
+                //}
+            }
+        }
+
+        assert_eq!(cfg.vertices.len(), dom_vertices.len());
+
+        DominatorTree {root: start, max_level: max_level, vertices: dom_vertices,
+                       edges: edges, cfg: cfg.clone(), dominators: dominators}
     }
 
     fn idom(vertex: u64, dominators: &HashMap<u64, HashSet<u64>>) -> u64 {
@@ -445,12 +516,15 @@ impl Graph<BasicBlock> for DominatorTree {
     }
 
     fn get_vertices(&self) -> Vec<BasicBlock> {
-        self.vertices.clone()
+        let mut vertices: Vec<BasicBlock> = Vec::new();
+        for vertex in &self.vertices {
+            vertices.push(vertex.vertex.clone());
+        }
+        vertices
     }
 
     fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
-        self.vertices.push(vertex);
-        true
+        false
     }
 
     fn root(&self) -> u64 {
@@ -460,7 +534,7 @@ impl Graph<BasicBlock> for DominatorTree {
 
 pub struct DJGraph {
     pub start: u64,
-    pub vertices: Vec<BasicBlock>,
+    pub vertices: Vec<DominatorVertex<BasicBlock>>,
     pub edges: HashSet<Edge>,
 }
 
@@ -486,6 +560,28 @@ impl DJGraph {
 
         DJGraph {start: dom_tree.root, vertices: dom_tree.vertices, edges: edges}
     }
+
+    pub fn vertices_at_level(&self, level: u64) -> HashSet<u64> {
+        let mut intermediate_vertices: VecDeque<u64> = VecDeque::new();
+
+        intermediate_vertices.push_back(self.start);
+        for _i in 1..level - 1 {
+            let mut temp_queue: VecDeque<u64> = VecDeque::new();
+            while !intermediate_vertices.is_empty() {
+                match intermediate_vertices.pop_front() {
+                    Some(vertex) => {
+                        for successor in self.get_successors(vertex) {
+                            temp_queue.push_back(successor);
+                        }
+                    },
+                    None => (),
+                };
+            }
+            intermediate_vertices.append(&mut temp_queue);
+        }
+
+        HashSet::from_iter(intermediate_vertices.iter().cloned())
+    }
 }
 
 impl Graph<BasicBlock> for DJGraph {
@@ -498,12 +594,15 @@ impl Graph<BasicBlock> for DJGraph {
     }
 
     fn get_vertices(&self) -> Vec<BasicBlock> {
-        self.vertices.clone()
+        let mut vertices: Vec<BasicBlock> = Vec::new();
+        for vertex in &self.vertices {
+            vertices.push(vertex.vertex.clone());
+        }
+        vertices
     }
 
     fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
-        self.vertices.push(vertex);
-        true
+        false
     }
 
     fn root(&self) -> u64 {
