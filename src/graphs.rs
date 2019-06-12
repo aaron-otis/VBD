@@ -624,6 +624,7 @@ impl DJGraph {
         let edges = self.edges.iter()
                               .filter(|e| vertices.contains(&e.entry) ||
                                           vertices.contains(&e.exit))
+                              .cloned()
                               .collect::<HashSet<_>>();
         let mut new_edges: HashSet<Edge> = HashSet::new();
 
@@ -642,15 +643,28 @@ impl DJGraph {
                 new_edges.insert(Edge::new(edge.entry, to_vertex, edge.edge_type.clone()));
             }
             // Note: Edges from and to vertices within the set are dropped.
+
+            // Each one of these edges must be removed.
+            self.edges.remove(&edge);
         }
+        // Add new edges and remove collapsed vertices.
+        println!("New edges: [{}]", new_edges.clone()
+                                             .iter()
+                                             .map(|e| format!("{}", e))
+                                             .collect::<Vec<String>>()
+                                             .join(", "));
+        for edge in new_edges {
+            self.edges.insert(edge);
+        }
+        self.vertices = self.vertices.iter()
+                                     .filter(|v| v.vertex.entry == to_vertex ||
+                                                 !vertices.contains(&v.vertex.entry))
+                                     .cloned()
+                                     .collect::<Vec<_>>();
         println!("Old edges: [{}]", self.edges.iter()
                                               .map(|e| format!("{}", e))
                                               .collect::<Vec<String>>()
                                               .join(", "));
-        println!("New edges: [{}]", new_edges.iter()
-                                             .map(|e| format!("{}", e))
-                                             .collect::<Vec<String>>()
-                                             .join(", "));
     }
 
     pub fn vertices_at_level(&self, level: u64) -> HashSet<u64> {
