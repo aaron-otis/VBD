@@ -598,7 +598,7 @@ impl DJGraph {
                      * of edges discovered.
                      */
                     match edge.edge_type {
-                        // CJ edges identify likely irreducible loops.
+                        // CJ edges identify possible irreducible loops.
                         EdgeType::CJEdge => {
                             let e = Edge::new(edge.entry, edge.exit, EdgeType::SPBack);
                             if sp_back_edges.contains(&e) {
@@ -606,16 +606,51 @@ impl DJGraph {
                             }
                         },
                         // BJ edges identify reducible loops.
-                        EdgeType::BJEdge => (), // FIXME
-                        _ => ()
+                        EdgeType::BJEdge => {
+                        },
+                        _ => println!("Edge {} is not a J edge", edge)
                     };
                 }
                 if irreducible_loop {
+                    println!("SCC not implemented yet!");
                 }
             }
         }
 
         loops
+    }
+
+    pub fn collapse_vertices(&mut self, vertices: &[u64], to_vertex: u64) {
+        let edges = self.edges.iter()
+                              .filter(|e| vertices.contains(&e.entry) ||
+                                          vertices.contains(&e.exit))
+                              .collect::<HashSet<_>>();
+        let mut new_edges: HashSet<Edge> = HashSet::new();
+
+        for edge in edges {
+            /* Edges that originate from inside this set of vertices, but exit
+             * elsewhere will be converted to an edge from the collapsed vertex to
+             * exiting vertices.
+             */
+            if vertices.contains(&edge.entry) && !vertices.contains(&edge.exit) {
+                new_edges.insert(Edge::new(to_vertex, edge.exit, edge.edge_type.clone()));
+            }
+            /* Edges originating outside this set to a vertex within this set will now
+             * end at the collapsed vertex.
+             */
+            else if !vertices.contains(&edge.entry) && vertices.contains(&edge.exit) {
+                new_edges.insert(Edge::new(edge.entry, to_vertex, edge.edge_type.clone()));
+            }
+            // Note: Edges from and to vertices within the set are dropped.
+        }
+        println!("Old edges: [{}]", self.edges.iter()
+                                              .map(|e| format!("{}", e))
+                                              .collect::<Vec<String>>()
+                                              .join(", "));
+        println!("New edges: [{}]", new_edges.iter()
+                                             .map(|e| format!("{}", e))
+                                             .collect::<Vec<String>>()
+                                             .join(", "));
     }
 
     pub fn vertices_at_level(&self, level: u64) -> HashSet<u64> {
