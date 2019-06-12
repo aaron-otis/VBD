@@ -90,6 +90,10 @@ impl Edge {
     pub fn contains(&self, addr: u64) -> bool {
         self.entry == addr || self.exit == addr
     }
+
+    pub fn to_type(&self, edge_type: EdgeType) -> Edge {
+        Edge {entry: self.entry, exit: self.exit, edge_type: edge_type}
+    }
 }
 
 impl fmt::Display for Edge {
@@ -133,14 +137,15 @@ impl CFG {
     }
 
     pub fn subgraph(&self, root: u64) -> CFG {
-        let order = dfs(self, root, &mut HashSet::new());
+        let order = dfs(self, root, &mut HashSet::new(), 0);
         let vertices: Vec<BasicBlock> = self.vertices.iter()
-                                            .filter(|b| order.contains(&b.entry))
+                                            .filter(|b| order.order
+                                                             .contains_key(&b.entry))
                                             .cloned()
                                             .collect();
         let edges = self.edges.iter()
-                              .filter(|e| order.contains(&e.entry) ||
-                                          order.contains(&e.exit))
+                              .filter(|e| order.order.contains_key(&e.entry) ||
+                                          order.order.contains_key(&e.exit))
                               .cloned()
                               .collect();
 
@@ -534,6 +539,7 @@ impl Graph<BasicBlock> for DominatorTree {
 
 pub struct DJGraph {
     pub start: u64,
+    pub max_level: u64,
     pub vertices: Vec<DominatorVertex<BasicBlock>>,
     pub edges: HashSet<Edge>,
 }
@@ -558,7 +564,58 @@ impl DJGraph {
             }
         }
 
-        DJGraph {start: dom_tree.root, vertices: dom_tree.vertices, edges: edges}
+        DJGraph {start: dom_tree.root, max_level: dom_tree.max_level,
+                 vertices: dom_tree.vertices, edges: edges}
+    }
+
+    /* Uses the method by Sreedhar, et al. to discover loops.
+     */
+    pub fn detect_loops(&mut self) -> Vec<Loop<DominatorVertex<BasicBlock>>> {
+        let mut loops: Vec<Loop<DominatorVertex<BasicBlock>>> = Vec::new();
+
+        // Need to identify sp-back edges from a spanning tree created via DFS.
+        let ordering = dfs(self, self.start, &mut HashSet::new(), 0);
+        let st = SpanningTree::new(ordering, &self.edges);
+        let sp_back_edges: HashSet<Edge> = st.edges
+                                             .iter()
+                                             .filter(|v| v.edge_type == EdgeType::SPBack)
+                                             .cloned()
+                                             .collect();
+
+        // Backwards traversal from lowest level to highest level in graph.
+        for level in (0..self.max_level + 1).rev() {
+            let mut irreducible_loop = false;
+
+            // Get all vertices on current level
+            for vertex in self.vertices.iter()
+                                       .filter(|v| v.level == level)
+                                       .collect::<Vec<_>>() {
+                // Get call incoming edges (m_i, vertex).
+                for edge in self.edges.iter()
+                                      .filter(|e| e.exit == vertex.vertex.entry)
+                                      .collect::<HashSet<_>>() {
+                    /* Reducible and irreducible loops can be identified by the type
+                     * of edges discovered.
+                     */
+                    match edge.edge_type {
+                        // CJ edges identify likely irreducible loops.
+                        EdgeType::CJEdge => {
+                            let e = Edge::new(edge.entry, edge.exit, EdgeType::SPBack);
+                            if sp_back_edges.contains(&e) {
+                                irreducible_loop = true;
+                            }
+                        },
+                        // BJ edges identify reducible loops.
+                        EdgeType::BJEdge => (), // FIXME
+                        _ => ()
+                    };
+                }
+                if irreducible_loop {
+                }
+            }
+        }
+
+        loops
     }
 
     pub fn vertices_at_level(&self, level: u64) -> HashSet<u64> {
@@ -610,23 +667,155 @@ impl Graph<BasicBlock> for DJGraph {
     }
 }
 
-type Ordering = Vec<u64>;
+pub struct SpanningTree {
+    vertices: Vec<u64>,
+    edges: HashSet<Edge>
+}
 
-pub fn dfs<G: Graph<BasicBlock>>(graph: &G, root: u64,
-                                 seen: &mut HashSet<u64>) -> Ordering {
-    let mut order: Ordering = Vec::new();
+/**
+ * A spanning tree used to discover sp-back edges.
+ */
+impl SpanningTree {
+    pub fn new(order: Ordering, edges: &HashSet<Edge>) -> SpanningTree {
+        // Clone sp-tree edges found from DFS.
+        let mut sp_edges: HashSet<Edge> = order.edges.clone();
 
-    order.push(root);
+        // Determine the type of each edge (x, y).
+        for edge in edges.iter()
+                         .filter(|e| !sp_edges.contains(&e.to_type(EdgeType::SPTree)))
+                         .collect::<HashSet<_>>() {
+            // If x = y, then this is an sp-back edge.
+            if edge.entry == edge.exit {
+                sp_edges.insert(Edge::new(edge.entry, edge.exit, EdgeType::SPBack));
+            }
+            // If a path along sp-tree edges from y to x exists, this is an sp-back edge.
+            match SpanningTree::path(edge.exit, edge.entry, &order.edges) {
+                Some(_) => sp_edges.insert(Edge::new(edge.entry,
+                                                     edge.exit,
+                                                     EdgeType::SPBack)),
+                None => match SpanningTree::path(edge.entry, edge.exit, &order.edges) {
+                    /* If a path along sp-tree edges from x to y exists, this is an
+                     * sp-forward edge.
+                     */
+                    Some(_) => sp_edges.insert(Edge::new(edge.entry,
+                                                         edge.exit,
+                                                         EdgeType::SPForward)),
+                    // If no path exists in either direction, this is an sp-cross edge.
+                    None => sp_edges.insert(Edge::new(edge.entry,
+                                                      edge.exit,
+                                                      EdgeType::SPCross)),
+                }
+            };
+        }
+
+        SpanningTree {vertices: Vec::from_iter(order.order.keys().cloned()),
+                      edges: sp_edges}
+    }
+
+    pub fn path_to(&self, origin: u64, destination: u64) -> Option<Vec<u64>> {
+        SpanningTree::path(origin,
+                           destination,
+                           &self.edges.iter()
+                                      .filter(|e| e.edge_type == EdgeType::SPTree)
+                                      .cloned()
+                                      .collect::<HashSet<_>>())
+    }
+
+    fn path(origin: u64, destination: u64, tree_edges: &HashSet<Edge>)
+            -> Option<Vec<u64>> {
+        for edge in tree_edges.iter()
+                              .filter(|e| e.entry == origin)
+                              .collect::<HashSet<_>>() {
+            if edge.exit == destination {
+                return Some(vec![origin, destination]);
+            }
+            match SpanningTree::path(edge.exit, destination, tree_edges) {
+                Some(mut v) => {
+                    let mut ret: Vec<u64> = vec![origin];
+                    ret.append(&mut v);
+                    return Some(ret);
+                }
+                None => (),
+            };
+        }
+
+        None
+    }
+}
+
+pub struct Ordering {
+    order: HashMap<u64, u64>,
+    edges: HashSet<Edge>
+}
+
+impl Ordering {
+    pub fn new() -> Ordering {
+        Ordering {order: HashMap::new(), edges: HashSet::new()}
+    }
+
+    pub fn append(&mut self, other: Ordering) -> bool {
+        self.edges = self.edges.union(&other.edges).cloned().collect();
+        self.order.extend(other.order);
+        true
+    }
+}
+
+pub fn dfs<G: Graph<BasicBlock>>(graph: &G, root: u64, seen: &mut HashSet<u64>,
+                                 depth: u64) -> Ordering {
+    let mut order: Ordering = Ordering::new();
+
+    order.order.insert(root, depth);
     seen.insert(root);
 
     for successor in graph.get_successors(root) {
         if !seen.contains(&successor) {
-            order.append(&mut dfs(graph, successor, seen));
+            order.edges.insert(Edge::new(root, successor, EdgeType::SPTree));
+            order.append(dfs(graph, successor, seen, depth + 1));
         }
     }
 
     order
 }
 
-//pub fn connected_components<G: Graph<BasicBlock>>(graph: G) -> Vec<Component> {
-//}
+/*
+pub fn connected_components<G: Graph<BasicBlock>>(graph: &G) -> Vec<Ordering> {
+    let mut components: Vec<Ordering> = Vec::new();
+    let mut vertices: HashSet<BasicBlock> = HashSet::from_iter(graph.get_vertices()
+                                                                    .iter()
+                                                                    .cloned());
+
+    while !vertices.is_empty() {
+        for vertex in &vertices {
+            /* If this vertex has no predecessors, treat it as a starting point and
+             * get the subgraph.
+             */
+            if graph.get_predecessors(vertex.entry).is_empty() {
+                components.push(dfs(graph, vertex.entry, &mut HashSet::new(), 0));
+                break;
+            }
+        }
+
+        if let Some(order) = components.last() {
+            for addr in order {
+                match graph.get_vertices()
+                           .iter()
+                           .position(|b| b.entry == *addr) {
+                    Some(i) => vertices.remove(&graph.get_vertices()[i]),
+                    None => false
+                };
+            }
+        }
+    }
+    components
+}
+*/
+
+// TODO: determine return type for the following function!
+pub fn strongly_connected_components<G: Graph<BasicBlock>>(graph: G) {
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Loop<V: Vertex> {
+    pub entry: u64,
+    pub body: Vec<V>
+}
