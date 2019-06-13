@@ -576,6 +576,7 @@ impl DJGraph {
         // Need to identify sp-back edges from a spanning tree created via DFS.
         let ordering = dfs(self, self.start, &mut HashSet::new(), 0);
         let mut st = SpanningTree::new(ordering, &self.edges);
+        let mut sp_back_edges = st.get_edges_of_type(EdgeType::SPBack);
 
         // Group vertices by level, from lowest to highest, and store in a vector.
         let mut levels: Vec<Vec<DominatorVertex<BasicBlock>>> = Vec::new();
@@ -588,7 +589,6 @@ impl DJGraph {
         for level in levels {
             let mut irreducible_loop = false;
             for vertex in level {
-                let sp_back_edges = st.get_edges_of_type(EdgeType::SPBack);
 
                 // Get call incoming edges (m_i, vertex).
                 for edge in self.edges.clone()
@@ -625,6 +625,7 @@ impl DJGraph {
                             self.collapse_vertices(body.as_slice(), first);
                             st.collapse_vertices(body.as_slice(), first);
                             loops.push(Loop {entry: first, body: body});
+                            sp_back_edges = st.get_edges_of_type(EdgeType::SPBack);
                         },
                         None => panic!("SCC returned a zero length body!")
                     };
