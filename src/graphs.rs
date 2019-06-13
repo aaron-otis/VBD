@@ -616,10 +616,10 @@ impl DJGraph {
                     };
                 }
                 if irreducible_loop {
-                    let body = strongly_connected_components(vertex.vertex.entry,
-                                                             &self.edges,
-                                                             &mut HashSet::new(),
-                                                             &mut Vec::new());
+                    let components = strongly_connected_components(vertex.vertex.entry,
+                                                                   &self.edges,
+                                                                   &mut HashSet::new());
+                    let body: Vec<u64> = Vec::from_iter(components.iter().cloned());
                     match body.first() {
                         Some(&first) => {
                             self.collapse_vertices(body.as_slice(), first);
@@ -987,12 +987,23 @@ pub fn connected_components<G: Graph<BasicBlock>>(graph: &G) -> Vec<Ordering> {
 }
 */
 
-pub fn strongly_connected_components(vertex: u64, edges: &HashSet<Edge>,
-                                     seen: &mut HashSet<u64>, stack: &mut Vec<u64>)
-        -> Vec<u64> {
-    let mut vertices: Vec<u64> = Vec::new();
+pub fn strongly_connected_components(vertex: u64,
+                                     edges: &HashSet<Edge>,
+                                     seen: &mut HashSet<u64>) -> HashSet<u64> {
+    let mut vertices: HashSet<u64> = HashSet::new();
 
-    println!("SCC not implemented yet!");
+    vertices.insert(vertex);
+    seen.insert(vertex);
+
+    for edge in edges.iter()
+                     .filter(|e| e.entry == vertex)
+                     .collect::<HashSet<_>>() {
+        if !seen.contains(&edge.exit) {
+            for vertex in strongly_connected_components(edge.exit, edges, seen) {
+                vertices.insert(vertex);
+            }
+        }
+    }
 
     vertices
 }
@@ -1015,4 +1026,17 @@ impl fmt::Display for Loop {
 
 #[test]
 fn scc_test() {
+    let mut edges: HashSet<Edge> = HashSet::new();
+
+    for e in [Edge::new(1, 2, EdgeType::Directed),
+              Edge::new(2, 3, EdgeType::Directed),
+              Edge::new(3, 4, EdgeType::Directed),
+              Edge::new(4, 5, EdgeType::Directed),
+              Edge::new(5, 3, EdgeType::Directed)].iter() {
+        edges.insert((*e).clone());
+    }
+
+    let body = strongly_connected_components(2, &edges, &mut HashSet::new());
+    let test = HashSet::from_iter(vec![2, 3, 4, 5].iter().cloned());
+    assert_eq!(body, test);
 }
