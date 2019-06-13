@@ -107,6 +107,8 @@ impl Binary {
     }
 
     pub fn detect_loops(&self) {
+        let cfg = graphs::CFG::new(self);
+        //let djg = graphs::DJGraph::new(&cfg, );
     }
 
     pub fn get_text_section<'c>(self) -> Result<Section, LoadError> {
@@ -214,7 +216,7 @@ impl fmt::Display for Function {
     }
 }
 
-#[derive(Clone, Eq)]
+#[derive(Clone, Eq, Debug)]
 pub struct BasicBlock {
     pub entry: u64,
     pub size: u64,
@@ -336,7 +338,7 @@ impl graphs::Vertex for BasicBlock {
     }
 }
 
-#[derive(Clone, Eq)]
+#[derive(Clone, Eq, Debug)]
 pub struct Instruction {
     pub id: u32,
     pub address: u64,
