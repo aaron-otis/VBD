@@ -299,7 +299,7 @@ impl Graph<BasicBlock> for CFG {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct DominatorVertex<V: Vertex> {
     pub level: u64,
     pub vertex: V
@@ -570,8 +570,8 @@ impl DJGraph {
 
     /* Uses the method by Sreedhar, et al. to discover loops.
      */
-    pub fn detect_loops(&mut self) -> Vec<Loop<DominatorVertex<BasicBlock>>> {
-        let mut loops: Vec<Loop<DominatorVertex<BasicBlock>>> = Vec::new();
+    pub fn detect_loops(&mut self) -> Vec<Loop> {
+        let mut loops: Vec<Loop> = Vec::new();
 
         // Need to identify sp-back edges from a spanning tree created via DFS.
         let ordering = dfs(self, self.start, &mut HashSet::new(), 0);
@@ -582,16 +582,21 @@ impl DJGraph {
                                              .cloned()
                                              .collect();
 
-        // Backwards traversal from lowest level to highest level in graph.
+        // Group vertices by level, from lowest to highest, and store in a vector.
+        let mut levels: Vec<Vec<DominatorVertex<BasicBlock>>> = Vec::new();
         for level in (0..self.max_level + 1).rev() {
+            levels.push(self.vertices.iter()
+                                     .filter(|v| v.level == level)
+                                     .cloned()
+                                     .collect::<Vec<_>>())
+        }
+        for level in levels {
             let mut irreducible_loop = false;
+            for vertex in level {
 
-            // Get all vertices on current level
-            for vertex in self.vertices.iter()
-                                       .filter(|v| v.level == level)
-                                       .collect::<Vec<_>>() {
                 // Get call incoming edges (m_i, vertex).
-                for edge in self.edges.iter()
+                for edge in self.edges.clone()
+                                      .iter()
                                       .filter(|e| e.exit == vertex.vertex.entry)
                                       .collect::<HashSet<_>>() {
                     /* Reducible and irreducible loops can be identified by the type
@@ -607,12 +612,26 @@ impl DJGraph {
                         },
                         // BJ edges identify reducible loops.
                         EdgeType::BJEdge => {
+                            let body = self.reach_under(edge.entry, edge.exit, vertex.level);
+                            self.collapse_vertices(body.as_slice(), vertex.vertex.entry);
+                            loops.push(Loop {entry: vertex.vertex.entry, body: body});
                         },
-                        _ => println!("Edge {} is not a J edge", edge)
+                        _ => ()
                     };
                 }
                 if irreducible_loop {
-                    println!("SCC not implemented yet!");
+                    let body = strongly_connected_components(vertex.vertex.entry,
+                                                             &self.edges,
+                                                             &mut HashSet::new(),
+                                                             &mut Vec::new());
+                    match body.first() {
+                        Some(&first) => {
+                            self.collapse_vertices(body.as_slice(), first);
+                            // FIXME: Need to add any sp-back edges that are collapsed.
+                            loops.push(Loop {entry: first, body: body});
+                        },
+                        None => panic!("SCC returned a zero length body!")
+                    };
                 }
             }
         }
@@ -627,19 +646,26 @@ impl DJGraph {
                               .cloned()
                               .collect::<HashSet<_>>();
         let mut new_edges: HashSet<Edge> = HashSet::new();
+        println!("Old edges: [{}]", edges.clone()
+                                         .iter()
+                                         .map(|e| format!("{}", e))
+                                         .collect::<Vec<String>>()
+                                         .join(", "));
 
         for edge in edges {
             /* Edges that originate from inside this set of vertices, but exit
              * elsewhere will be converted to an edge from the collapsed vertex to
              * exiting vertices.
              */
-            if vertices.contains(&edge.entry) && !vertices.contains(&edge.exit) {
+            if vertices.contains(&edge.entry) && !vertices.contains(&edge.exit) &&
+               to_vertex != edge.exit {
                 new_edges.insert(Edge::new(to_vertex, edge.exit, edge.edge_type.clone()));
             }
             /* Edges originating outside this set to a vertex within this set will now
              * end at the collapsed vertex.
              */
-            else if !vertices.contains(&edge.entry) && vertices.contains(&edge.exit) {
+            else if !vertices.contains(&edge.entry) && vertices.contains(&edge.exit) &&
+                    to_vertex != edge.entry {
                 new_edges.insert(Edge::new(edge.entry, to_vertex, edge.edge_type.clone()));
             }
             // Note: Edges from and to vertices within the set are dropped.
@@ -661,10 +687,61 @@ impl DJGraph {
                                                  !vertices.contains(&v.vertex.entry))
                                      .cloned()
                                      .collect::<Vec<_>>();
-        println!("Old edges: [{}]", self.edges.iter()
+        println!("Edges now: [{}]", self.edges.iter()
                                               .map(|e| format!("{}", e))
                                               .collect::<Vec<String>>()
                                               .join(", "));
+    }
+
+    /** Finds all vertices on equal or higher valued levels that can reach vertex x
+     * without passing through vertex y.
+     */
+    fn reach_under(&self, x: u64, y: u64, level: u64) -> Vec<u64> {
+        let mut vertices: Vec<u64> = Vec::new();
+
+        vertices.push(x);
+        for vertex in self.vertices.iter()
+                                   .filter(|v| v.level >= level && v.vertex.entry != y)
+                                   .collect::<Vec<_>>() {
+            if let Some(path) = self.path(vertex.vertex.entry, x, level) {
+                if !path.contains(&y) {
+                    vertices.push(vertex.vertex.entry);
+                }
+            }
+        }
+
+        vertices
+    }
+
+    pub fn path(&self, origin: u64, destination: u64, level: u64) -> Option<Vec<u64>> {
+        for edge in self.edges.iter()
+                              .filter(|e| e.entry == origin)
+                              .collect::<HashSet<_>>() {
+            if let Some(v) = self.vertex_at(edge.exit) {
+                if edge.exit == destination && v.level >= level {
+                    return Some(vec![origin, destination]);
+                }
+            }
+            match self.path(edge.exit, destination, level) {
+                Some(mut v) => {
+                    let mut ret: Vec<u64> = vec![origin];
+                    ret.append(&mut v);
+                    return Some(ret);
+                }
+                None => (),
+            };
+        }
+
+        None
+    }
+
+    pub fn vertex_at(&self, addr: u64) -> Option<DominatorVertex<BasicBlock>> {
+        for vertex in &self.vertices {
+            if vertex.vertex.entry == addr {
+                return Some(vertex.clone());
+            }
+        }
+        None
     }
 
     pub fn vertices_at_level(&self, level: u64) -> HashSet<u64> {
@@ -859,12 +936,32 @@ pub fn connected_components<G: Graph<BasicBlock>>(graph: &G) -> Vec<Ordering> {
 }
 */
 
-// TODO: determine return type for the following function!
-pub fn strongly_connected_components<G: Graph<BasicBlock>>(graph: G) {
+pub fn strongly_connected_components(vertex: u64, edges: &HashSet<Edge>,
+                                     seen: &mut HashSet<u64>, stack: &mut Vec<u64>)
+        -> Vec<u64> {
+    let mut vertices: Vec<u64> = Vec::new();
+
+    println!("SCC not implemented yet!");
+
+    vertices
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct Loop<V: Vertex> {
+pub struct Loop {
     pub entry: u64,
-    pub body: Vec<V>
+    pub body: Vec<u64>
+}
+
+impl fmt::Display for Loop {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<Loop @ 0x{:x} [{}]>", self.entry, self.body
+                                                          .iter()
+                                                          .map(|x| format!("0x{:x}", x))
+                                                          .collect::<Vec<String>>()
+                                                          .join(", "))
+    }
+}
+
+#[test]
+fn scc_test() {
 }
