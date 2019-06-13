@@ -575,12 +575,7 @@ impl DJGraph {
 
         // Need to identify sp-back edges from a spanning tree created via DFS.
         let ordering = dfs(self, self.start, &mut HashSet::new(), 0);
-        let st = SpanningTree::new(ordering, &self.edges);
-        let sp_back_edges: HashSet<Edge> = st.edges
-                                             .iter()
-                                             .filter(|v| v.edge_type == EdgeType::SPBack)
-                                             .cloned()
-                                             .collect();
+        let mut st = SpanningTree::new(ordering, &self.edges);
 
         // Group vertices by level, from lowest to highest, and store in a vector.
         let mut levels: Vec<Vec<DominatorVertex<BasicBlock>>> = Vec::new();
@@ -593,6 +588,7 @@ impl DJGraph {
         for level in levels {
             let mut irreducible_loop = false;
             for vertex in level {
+                let sp_back_edges = st.get_edges_of_type(EdgeType::SPBack);
 
                 // Get call incoming edges (m_i, vertex).
                 for edge in self.edges.clone()
@@ -627,7 +623,7 @@ impl DJGraph {
                     match body.first() {
                         Some(&first) => {
                             self.collapse_vertices(body.as_slice(), first);
-                            // FIXME: Need to add any sp-back edges that are collapsed.
+                            st.collapse_vertices(body.as_slice(), first);
                             loops.push(Loop {entry: first, body: body});
                         },
                         None => panic!("SCC returned a zero length body!")
@@ -838,6 +834,10 @@ impl SpanningTree {
                       edges: sp_edges}
     }
 
+    pub fn get_edges_of_type(&self, edge_type: EdgeType) -> HashSet<Edge> {
+        self.edges.iter().filter(|v| v.edge_type == edge_type).cloned().collect()
+    }
+
     pub fn path_to(&self, origin: u64, destination: u64) -> Option<Vec<u64>> {
         SpanningTree::path(origin,
                            destination,
@@ -845,6 +845,56 @@ impl SpanningTree {
                                       .filter(|e| e.edge_type == EdgeType::SPTree)
                                       .cloned()
                                       .collect::<HashSet<_>>())
+    }
+
+    pub fn collapse_vertices(&mut self, vertices: &[u64], to_vertex: u64) {
+        let edges = self.edges.iter()
+                              .filter(|e| vertices.contains(&e.entry) ||
+                                          vertices.contains(&e.exit))
+                              .cloned()
+                              .collect::<HashSet<_>>();
+        let mut new_edges: HashSet<Edge> = HashSet::new();
+        println!("Old sp edges: [{}]", edges.clone()
+                                            .iter()
+                                            .map(|e| format!("{}", e))
+                                            .collect::<Vec<String>>()
+                                            .join(", "));
+
+        for edge in edges {
+            /* Edges that originate from inside this set of vertices, but exit
+             * elsewhere will be converted to an edge from the collapsed vertex to
+             * exiting vertices.
+             */
+            if vertices.contains(&edge.entry) && !vertices.contains(&edge.exit) &&
+               to_vertex != edge.exit {
+                new_edges.insert(Edge::new(to_vertex, edge.exit, edge.edge_type.clone()));
+            }
+            /* Edges originating outside this set to a vertex within this set will now
+             * end at the collapsed vertex.
+             */
+            else if !vertices.contains(&edge.entry) && vertices.contains(&edge.exit) &&
+                    to_vertex != edge.entry {
+                new_edges.insert(Edge::new(edge.entry, to_vertex, edge.edge_type.clone()));
+            }
+            // Note: Edges from and to vertices within the set are dropped.
+
+            // Each one of these edges must be removed.
+            self.edges.remove(&edge);
+        }
+        // Add new edges and remove collapsed vertices.
+        println!("New sp edges: [{}]", new_edges.clone()
+                                                .iter()
+                                                .map(|e| format!("{}", e))
+                                                .collect::<Vec<String>>()
+                                                .join(", "));
+        for edge in new_edges {
+            self.edges.insert(edge);
+        }
+        self.vertices = self.vertices.iter()
+                                     .filter(|&&v| v == to_vertex ||
+                                                 !vertices.contains(&v))
+                                     .cloned()
+                                     .collect::<Vec<_>>();
     }
 
     fn path(origin: u64, destination: u64, tree_edges: &HashSet<Edge>)
