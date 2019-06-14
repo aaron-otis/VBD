@@ -402,47 +402,14 @@ impl DominatorTree {
             }
         }
 
-        println!("*** DominatorTree Debugging Output ***");
-        println!("Dominators:");
-        for (addr, doms) in &dominators {
-            print!("0x{:x} => {}", addr, "{");
-            for d in doms {
-                print!("0x{:x}, ", d);
-            }
-            println!("{}", "}");
-        }
-        println!("");
-
-        /*
-        for vertex in &block_entries {
-            let mut doms = dominators[vertex].clone();
-            if !doms.remove(vertex) {
-                panic!("Vertex 0x{:x} not its own dominator", vertex);
-            }
-            print!("sdoms(0x{:x}): ", vertex);
-            for d in doms {
-                print!("0x{:x}, ", d);
-            }
-            println!("");
-        }
-        */
-
-        println!("\nImmediate dominators:");
         // Add each (idom(x), x) edge.
         let mut edges: HashSet<Edge> = HashSet::new();
         for addr in block_entries {
             if addr != start {
                 edges.insert(Edge::new(DominatorTree::idom(addr, &dominators), addr,
                                        EdgeType::DEdge));
-                println!("idom(0x{:x}) = 0x{:x}", addr,
-                         DominatorTree::idom(addr, &dominators));
             }
         }
-        println!("\nCreated {} edges", edges.len());
-        for edge in &edges {
-            print!("{}, ", edge);
-        }
-        println!("\n*** End of Debugging ***");
 
         // Create set of DominatorVertex to preserve level information.
         let mut dom_vertices: Vec<DominatorVertex<BasicBlock>> = Vec::new();
@@ -511,11 +478,6 @@ impl DominatorTree {
     }
 
     pub fn dominates(&self, x: u64, y: u64) -> bool {
-        print!("Is 0x{:x} a dominator of 0x{:x}? Dominators for 0x{:x}: ", x, y, y);
-        for dom in &self.dominators[&y] {
-            print!("0x{:x}, ", dom);
-        }
-        println!("");
         self.dominators[&y].contains(&x)
     }
 
@@ -659,11 +621,6 @@ impl DJGraph {
                               .cloned()
                               .collect::<HashSet<_>>();
         let mut new_edges: HashSet<Edge> = HashSet::new();
-        println!("Old edges: [{}]", edges.clone()
-                                         .iter()
-                                         .map(|e| format!("{}", e))
-                                         .collect::<Vec<String>>()
-                                         .join(", "));
 
         for edge in edges {
             /* Edges that originate from inside this set of vertices, but exit
@@ -687,11 +644,6 @@ impl DJGraph {
             self.edges.remove(&edge);
         }
         // Add new edges and remove collapsed vertices.
-        println!("New edges: [{}]", new_edges.clone()
-                                             .iter()
-                                             .map(|e| format!("{}", e))
-                                             .collect::<Vec<String>>()
-                                             .join(", "));
         for edge in new_edges {
             self.edges.insert(edge);
         }
@@ -700,10 +652,6 @@ impl DJGraph {
                                                  !vertices.contains(&v.vertex.entry))
                                      .cloned()
                                      .collect::<Vec<_>>();
-        println!("Edges now: [{}]", self.edges.iter()
-                                              .map(|e| format!("{}", e))
-                                              .collect::<Vec<String>>()
-                                              .join(", "));
     }
 
     /** Finds all vertices on equal or higher valued levels that can reach vertex x
