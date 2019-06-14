@@ -616,10 +616,10 @@ impl DJGraph {
                     };
                 }
                 if irreducible_loop {
-                    let components = strongly_connected_components(vertex.vertex.entry,
-                                                                   &self.edges,
-                                                                   &mut HashSet::new());
-                    let body: Vec<u64> = Vec::from_iter(components.iter().cloned());
+                    let mut params = SCCParam::new(&self.edges);
+                    strongly_connected_components(vertex.vertex.entry, &mut params);
+
+                    let body = params.get_component_as_vec(vertex.vertex.entry);
                     match body.first() {
                         Some(&first) => {
                             self.collapse_vertices(body.as_slice(), first);
@@ -987,25 +987,136 @@ pub fn connected_components<G: Graph<BasicBlock>>(graph: &G) -> Vec<Ordering> {
 }
 */
 
-pub fn strongly_connected_components(vertex: u64,
-                                     edges: &HashSet<Edge>,
-                                     seen: &mut HashSet<u64>) -> HashSet<u64> {
-    let mut vertices: HashSet<u64> = HashSet::new();
+pub struct SCCParam {
+    pub edges: HashSet<Edge>,
+    pub seen: HashSet<u64>,
+    pub stack: Vec<u64>,
+    pub vertices: HashMap<u64, SCCValue>
+}
 
-    vertices.insert(vertex);
-    seen.insert(vertex);
+impl SCCParam {
+    pub fn new(edges: &HashSet<Edge>) -> SCCParam {
+        SCCParam {edges: edges.clone(),
+                  seen: HashSet::new(),
+                  stack: Vec::new(),
+                  vertices: HashMap::new()}
+    }
 
-    for edge in edges.iter()
-                     .filter(|e| e.entry == vertex)
-                     .collect::<HashSet<_>>() {
-        if !seen.contains(&edge.exit) {
-            for vertex in strongly_connected_components(edge.exit, edges, seen) {
-                vertices.insert(vertex);
+    pub fn get_component(&self, root: u64) -> HashSet<u64> {
+        let mut component: HashSet<u64> = HashSet::new();
+
+        for (vertex, val) in &self.vertices {
+            if val.root == root && val.in_component {
+                component.insert(*vertex);
             }
+        }
+
+        component
+    }
+
+    pub fn get_component_as_vec(&self, root: u64) -> Vec<u64> {
+        Vec::from_iter(self.get_component(root).iter().cloned())
+    }
+
+    pub fn insert(&mut self, vertex: u64, root: u64, in_component: bool) {
+        self.vertices.insert(vertex, SCCValue {root: root,
+                                               in_component: in_component});
+    }
+
+    pub fn update(&mut self, vertex: &u64, root: Option<u64>,
+                  in_component: Option<bool>) {
+        match self.vertices.get_mut(vertex) {
+            Some(val) => {
+                match root {
+                    Some(root) => val.root = root,
+                    None => ()
+                };
+                match in_component {
+                    Some(in_component) => val.in_component = in_component,
+                    None => ()
+                };
+            },
+            None => panic!("[SCCParam::update] Vertex 0x{:x} not in hash map", *vertex)
+        };
+    }
+
+    pub fn is_in_component(&self, vertex: u64) -> bool {
+        match self.vertices.get(&vertex) {
+            Some(val) => return val.in_component,
+            None => panic!("[SCCParam::is_in_component] vertex 0x{:x} not in hash map!",
+                           vertex)
         }
     }
 
-    vertices
+    /** Find the value that was processed first by checking each position on the stack.
+     */
+    pub fn min(&self, x: u64, y: u64) -> u64 {
+        match self.stack.iter().position(|&p| p == x) {
+            Some(i) => match self.stack.iter().position(|&p| p == y) {
+                Some(j) => {
+                    if i < j {
+                        return x;
+                    }
+                    return y;
+                },
+                None => panic!("[SCCParam::min (y)] 0x{:x} not on stack!", y)
+            },
+            None => panic!("[SCCParam::min (x)] 0x{:x} not on stack!", x)
+        };
+    }
+
+    pub fn min_of_roots(&self, x: u64, y: u64) -> u64 {
+        match self.vertices.get(&x) {
+            Some(x_val) => match self.vertices.get(&y) {
+                Some(y_val) => self.min(x_val.root, y_val.root),
+                None => panic!("[SCCParam::min_of_roots] Vertex 0x{:x} not in hash map",
+                               y)
+            },
+            None => panic!("[SCCParam::min_of_roots] Vertex 0x{:x} not in hash map", x)
+        }
+    }
+}
+
+pub struct SCCValue {
+    pub root: u64,
+    pub in_component: bool
+}
+
+/** An implementation of Tarjan's Strongly Connected Component algorithm.
+ */
+pub fn strongly_connected_components(vertex: u64, params: &mut SCCParam) {
+    params.seen.insert(vertex);
+    params.stack.push(vertex);
+    params.insert(vertex, vertex, false);
+
+    // Check each vertex w such that (v, w) is in E.
+    for edge in &params.edges.iter()
+                             .filter(|e| e.entry == vertex)
+                             .cloned()
+                             .collect::<HashSet<_>>() {
+        // Recursively traverse unseen vertices. This will modify 'params'.
+        if !params.seen.contains(&edge.exit) {
+            strongly_connected_components(edge.exit, params);
+        }
+        // When InComponent[w] = false, set root[v] = min{roo[v], root[w]}.
+        if !params.is_in_component(edge.exit) {
+            params.update(&vertex, Some(params.min_of_roots(vertex, edge.exit)), None);
+        }
+    }
+    /* If root[v] = v, pop each vertex w off the stack and set in InComponent[w] = true
+     * until w = v.
+     */
+    match params.vertices.get(&vertex) {
+        Some(val) => if val.root == vertex {
+            while let Some(w) = params.stack.pop() {
+                params.update(&w, None, Some(true));
+                if w == vertex {
+                    break;
+                }
+            }
+        },
+        None => panic!("[SCC] Vertex 0x{:x} not in hash map!", vertex)
+    };
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -1032,11 +1143,32 @@ fn scc_test() {
               Edge::new(2, 3, EdgeType::Directed),
               Edge::new(3, 4, EdgeType::Directed),
               Edge::new(4, 5, EdgeType::Directed),
-              Edge::new(5, 3, EdgeType::Directed)].iter() {
+              Edge::new(5, 2, EdgeType::Directed),
+              Edge::new(1, 6, EdgeType::Directed),
+              Edge::new(6, 7, EdgeType::Directed),
+              Edge::new(7, 6, EdgeType::Directed),
+              Edge::new(7, 8, EdgeType::Directed),
+              Edge::new(5, 8, EdgeType::Directed),
+                ].iter() {
         edges.insert((*e).clone());
     }
 
-    let body = strongly_connected_components(2, &edges, &mut HashSet::new());
-    let test = HashSet::from_iter(vec![2, 3, 4, 5].iter().cloned());
+    let mut test = HashSet::from_iter(vec![2, 3, 4, 5].iter().cloned());
+    let mut params = SCCParam::new(&edges);
+    strongly_connected_components(2, &mut params);
+
+    let mut body = params.get_component(2);
+    assert_eq!(body, test);
+
+    params = SCCParam::new(&edges);
+    strongly_connected_components(1, &mut params);
+    body = params.get_component(1);
+    test = HashSet::from_iter(vec![1].iter().cloned());
+    assert_eq!(body, test);
+
+    params = SCCParam::new(&edges);
+    strongly_connected_components(6, &mut params);
+    test = HashSet::from_iter(vec![6, 7].iter().cloned());
+    body = params.get_component(6);
     assert_eq!(body, test);
 }
