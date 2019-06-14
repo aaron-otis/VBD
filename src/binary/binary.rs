@@ -11,11 +11,13 @@ use std::ffi::CStr;
 use std::collections::HashSet;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
+use std::iter::FromIterator;
 use super::section::*;
 use super::symbol::*;
 use super::super::util::print_bytes;
 use super::super::capstone;
 use super::super::graphs;
+use super::super::graphs::Graph;
 
 pub enum LoadError {
     SectionNotFound,
@@ -106,9 +108,22 @@ impl Binary {
         graphs::CFG::new(self)
     }
 
-    pub fn detect_loops(&self) {
-        let cfg = graphs::CFG::new(self);
-        //let djg = graphs::DJGraph::new(&cfg, );
+    pub fn detect_loops(&self) -> Vec<graphs::Loop> {
+        let mut loops: Vec<graphs::Loop> = Vec::new();
+
+        if let Some(cfg) = graphs::CFG::new(self) {
+            let roots = cfg.vertices.iter()
+                                    .filter(|b| cfg.get_predecessors(b.entry).is_empty())
+                                    .collect::<Vec<_>>();
+            let subgraphs = Vec::from_iter(roots.iter().map(|b| cfg.subgraph(b.entry)));
+
+            for subgraph in &subgraphs {
+                let mut dj = graphs::DJGraph::new(&subgraph, subgraph.start);
+                loops.append(&mut dj.detect_loops());
+            }
+        }
+
+        loops
     }
 
     pub fn get_text_section<'c>(self) -> Result<Section, LoadError> {
