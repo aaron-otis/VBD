@@ -954,7 +954,6 @@ pub fn dfs<G: Graph<BasicBlock>>(graph: &G, root: u64, seen: &mut HashSet<u64>,
     order
 }
 
-/*
 pub fn connected_components<G: Graph<BasicBlock>>(graph: &G) -> Vec<Ordering> {
     let mut components: Vec<Ordering> = Vec::new();
     let mut vertices: HashSet<BasicBlock> = HashSet::from_iter(graph.get_vertices()
@@ -973,7 +972,7 @@ pub fn connected_components<G: Graph<BasicBlock>>(graph: &G) -> Vec<Ordering> {
         }
 
         if let Some(order) = components.last() {
-            for addr in order {
+            for addr in order.order.keys() {
                 match graph.get_vertices()
                            .iter()
                            .position(|b| b.entry == *addr) {
@@ -985,7 +984,6 @@ pub fn connected_components<G: Graph<BasicBlock>>(graph: &G) -> Vec<Ordering> {
     }
     components
 }
-*/
 
 pub struct SCCParam {
     pub edges: HashSet<Edge>,
