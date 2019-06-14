@@ -12,10 +12,10 @@ pub mod graphs;
 
 use binary::binary::Binary;
 use statistics::{count_instructions, print_statistics};
-//use binary::section::{print_sections, print_section_contents};
-//use binary::symbol::{print_symbols};
 use argparse::{ArgumentParser, StoreTrue, Store};
 use std::{env, process};
+use graphs::Graph;
+use std::iter::FromIterator;
 
 struct Options {
     fname: String,
@@ -24,6 +24,7 @@ struct Options {
     symbols: bool,
     disam: bool,
     stats: bool,
+    loops: bool,
     all: bool,
 }
 
@@ -36,6 +37,7 @@ fn main() {
         symbols: false,
         disam: false,
         stats: false,
+        loops: false,
         all: false,
     };
 
@@ -66,6 +68,10 @@ fn main() {
           .add_option(&["-T", "--satistics"],
                       StoreTrue,
                       "Gather statistics on the given binary.");
+        ap.refer(&mut options.loops)
+          .add_option(&["-l", "--loops"],
+                      StoreTrue,
+                      "Print the number of loops detected in the binary.");
         ap.refer(&mut options.all).add_option(&["-A", "--all"],
                                               StoreTrue, "Enable all options");
         ap.parse_args_or_exit();
@@ -104,31 +110,25 @@ fn main() {
         b.print_section_contents();
         print!("\n");
     }
-    if options.disam {
+
+    // Disassemble the binary if any of these options are selected.
+    if options.disam || options.stats || options.loops {
         match b.disassemble() {
             Ok(_) => {
-                for block in b.blocks.clone() {
-                    println!("{}\n", block);
-                }
-                match b.cfg() {
-                    Some(cfg) => {
-                        for edge in cfg.edges {
-                            print!("{}, ", edge);
-                        }
-                        println!("");
-                    },
-                    None => (),
-                };
                 println!("Successfully disassembled binary")
             },
             Err(e) => println!("Error disassembling: {}", e),
         };
     }
+    if options.disam {
+        for block in b.blocks.clone() {
+            println!("{}\n", block);
+        }
+    }
     if options.stats {
-        // FIXME: Don't potentially disassemble twice.
-        match b.disassemble() {
-            Ok(_) => print_statistics(&count_instructions(&b)),
-            Err(e) => println!("Error disassembling: {}", e),
-        };
+        print_statistics(&count_instructions(&b));
+    }
+    if options.loops {
+        println!("Detected {} loops", b.detect_loops().len());
     }
 }
