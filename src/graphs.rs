@@ -276,6 +276,22 @@ impl CFG {
     }
 }
 
+impl fmt::Display for CFG {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,
+               "<CFG start: 0x{:x}, vertices: [{}], edges: [{}]>",
+               self.start,
+               &self.vertices.iter()
+                             .map(|v| format!("0x{:x}", v.entry))
+                             .collect::<Vec<String>>()
+                             .join(", "),
+               &self.edges.iter()
+                          .map(|v| format!("{}", v))
+                          .collect::<Vec<String>>()
+                          .join(", "))
+    }
+}
+
 impl Graph<BasicBlock> for CFG {
     fn get_edges(&self) -> &HashSet<Edge> {
         &self.edges
