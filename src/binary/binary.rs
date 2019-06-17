@@ -112,14 +112,12 @@ impl Binary {
         let mut loops: Vec<graphs::Loop> = Vec::new();
 
         if let Some(cfg) = graphs::CFG::new(self) {
-            let roots = cfg.vertices.iter()
-                                    .filter(|b| cfg.get_predecessors(b.entry).is_empty())
-                                    .collect::<Vec<_>>();
-            let subgraphs = Vec::from_iter(roots.iter().map(|b| cfg.subgraph(b.entry)));
+            let subgraphs = cfg.components();
 
             for subgraph in &subgraphs {
                 let mut dj = graphs::DJGraph::new(&subgraph, subgraph.start);
-                loops.append(&mut dj.detect_loops());
+                let mut l = dj.detect_loops();
+                loops.append(&mut l);
             }
         }
 
