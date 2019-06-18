@@ -161,7 +161,6 @@ impl CFG {
         let mut seen: HashSet<u64> = HashSet::new();
         let mut queue: VecDeque<u64> = VecDeque::new();
 
-        println!("{}", self);
         println!("This CFG has {} vertices and {} edges\n", self.vertices.len(), self.edges.len());
 
         for vertex in &self.vertices {
