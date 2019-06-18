@@ -1,5 +1,5 @@
 extern crate argparse;
-extern crate p8n_types;
+extern crate regex;
 
 pub mod binary;
 pub mod conversions;
@@ -15,8 +15,6 @@ use binary::binary::Binary;
 use statistics::{count_instructions, print_statistics};
 use argparse::{ArgumentParser, StoreTrue, Store};
 use std::{env, process};
-use graphs::Graph;
-use std::iter::FromIterator;
 use sample::Sample;
 
 struct Options {
