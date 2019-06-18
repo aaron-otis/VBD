@@ -9,6 +9,7 @@ pub mod capstone;
 pub mod util;
 pub mod statistics;
 pub mod graphs;
+pub mod sample;
 
 use binary::binary::Binary;
 use statistics::{count_instructions, print_statistics};
@@ -16,6 +17,7 @@ use argparse::{ArgumentParser, StoreTrue, Store};
 use std::{env, process};
 use graphs::Graph;
 use std::iter::FromIterator;
+use sample::Sample;
 
 struct Options {
     fname: String,
@@ -25,12 +27,13 @@ struct Options {
     disam: bool,
     stats: bool,
     loops: bool,
+    analysis: bool,
     all: bool,
 }
 
 fn main() {
     // Set default options.
-    let mut options = Options {
+    let mut options: Options = Options {
         fname: String::new(),
         sections: false,
         dump_sec: false,
@@ -38,6 +41,7 @@ fn main() {
         disam: false,
         stats: false,
         loops: false,
+        analysis: false,
         all: false,
     };
 
@@ -72,6 +76,10 @@ fn main() {
           .add_option(&["-l", "--loops"],
                       StoreTrue,
                       "Print the number of loops detected in the binary.");
+        ap.refer(&mut options.analysis)
+          .add_option(&["--analyze"],
+                      StoreTrue,
+                      "Analyze the given binary for potential ransomware signs.");
         ap.refer(&mut options.all).add_option(&["-A", "--all"],
                                               StoreTrue, "Enable all options");
         ap.parse_args_or_exit();
@@ -85,8 +93,8 @@ fn main() {
     }
 
     // Parse binary.
-    let mut b = match Binary::new(options.fname) {
-        Ok(b) => b,
+    let mut b: Binary = match Binary::new(options.fname) {
+        Ok(bin) => bin,
         Err(_e) => panic!("unable to load binary"),
     };
 
@@ -130,5 +138,15 @@ fn main() {
     }
     if options.loops {
         println!("Detected {} loops", b.detect_loops().len());
+    }
+    if options.analysis {
+        let mut sample: Sample = Sample::new(b);
+        sample.analysis();
+        statistics::print_statistics(&sample.counts);
+        println!("Detected {} loops", sample.loops);
+        println!("Detected {} bitwise arithmetic operations", sample.bitops);
+        println!("Detected {} cryptographic constants", sample.constants.len());
+        println!("Detected {} strings that are commonly seen in ransom notes",
+                 sample.strings.len());
     }
 }
