@@ -6,7 +6,19 @@ use binary::section::Section;
 use capstone;
 
 pub trait Vertex {
-    fn get_id(&self) -> u64;
+    fn get_id(&self) -> u32;
+}
+
+impl Vertex for u32 {
+    fn get_id(&self) -> u32 {
+        *self
+    }
+}
+
+impl Vertex for (u32, EdgeSet) {
+    fn get_id(&self) -> u32 {
+        self.0
+    }
 }
 
 pub trait Graph<V: Vertex> {
@@ -14,35 +26,20 @@ pub trait Graph<V: Vertex> {
     fn add_edge(&mut self, edge: Edge) -> bool;
     fn get_vertices(&self) -> Vec<V>;
     fn add_vertex(&mut self, vertex: V) -> bool;
-    fn root(&self) -> u64;
+    fn root(&self) -> u32;
+    fn get_edgeset(&self, addr: u32) -> EdgeSet;
 
-    fn get_successors(&self, addr: u64) -> Vec<u64> {
-        let mut successors: Vec<u64> = Vec::new();
-
-        for edge in self.get_edges() {
-            if edge.entry == addr {
-                successors.push(edge.exit.clone());
-            }
-        }
-
-        successors
+    fn get_successors(&self, addr: u32) -> Vec<u32> {
+        self.get_edgeset(addr).successors.clone()
     }
 
-    fn get_predecessors(&self, addr: u64) -> Vec<u64> {
-        let mut predecessors: Vec<u64> = Vec::new();
-
-        for edge in self.get_edges() {
-            if edge.exit == addr {
-                predecessors.push(edge.entry.clone());
-            }
-        }
-
-        predecessors
+    fn get_predecessors(&self, addr: u32) -> Vec<u32> {
+        self.get_edgeset(addr).predecessors.clone()
     }
 }
 
 pub trait Tree {
-    fn get_level(&self, addr: u64) -> u64;
+    fn get_level(&self, addr: u32) -> u32;
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -77,17 +74,17 @@ impl fmt::Display for EdgeType {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Edge {
-    pub entry: u64,
-    pub exit: u64,
+    pub entry: u32,
+    pub exit: u32,
     pub edge_type: EdgeType,
 }
 
 impl Edge {
-    pub fn new(entry: u64, exit: u64, edge_type: EdgeType) -> Edge {
+    pub fn new(entry: u32, exit: u32, edge_type: EdgeType) -> Edge {
         Edge {entry: entry, exit: exit, edge_type}
     }
 
-    pub fn contains(&self, addr: u64) -> bool {
+    pub fn contains(&self, addr: u32) -> bool {
         self.entry == addr || self.exit == addr
     }
 
@@ -102,31 +99,76 @@ impl fmt::Display for Edge {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct EdgeSet {
+    predecessors: Vec<u32>,
+    successors: Vec<u32>
+}
+
+impl EdgeSet {
+    pub fn new(predecessors: &[u32], successors: &[u32]) -> EdgeSet {
+        EdgeSet {predecessors: predecessors.to_vec(), successors: successors.to_vec()}
+    }
+
+    pub fn new_empty() -> EdgeSet {
+        EdgeSet {predecessors: Vec::new(), successors: Vec::new()}
+    }
+
+    pub fn add_predecessor(&mut self, predecessor: u32) {
+        self.predecessors.push(predecessor);
+    }
+
+    pub fn add_successor(&mut self, successor: u32) {
+        self.successors.push(successor);
+    }
+
+    pub fn num_elements(&self) -> (usize, usize) {
+        (self.predecessors.len(), self.successors.len())
+    }
+}
+
 #[derive(Clone)]
 pub struct CFG {
-    pub start: u64,
-    pub end: u64,
+    pub start: u32,
+    pub end: u32,
     pub edges: HashSet<Edge>,
-    pub vertices: Vec<BasicBlock>
+    pub vertices: HashMap<u32, EdgeSet>
 }
 
 impl CFG {
     pub fn new(bin: &Binary) -> Option<CFG> {
         let last_block = bin.blocks.len() - 1;
-        let last_insn = bin.blocks[last_block].instructions.len() - 1;
         let text = match bin.clone().get_text_section() {
             Ok(sec) => sec,
             Err(_e) => return None,
         };
         let edges = CFG::detect_edges(bin.blocks.as_slice(), &text);
+        let mut vertices: HashMap<u32, EdgeSet> = HashMap::new();
 
-        Some(CFG {start: bin.blocks[0].entry,
-                  end: bin.blocks[last_block].entry,
+        // Add all vertices as keys, each with an empty EdgeSets.
+        for block in &bin.blocks {
+            vertices.insert(block.entry as u32, EdgeSet::new_empty());
+        }
+        // Iteratively update EdgeSets.
+        for edge in &edges {
+            // Add successor.
+            if let Some(edgeset) = vertices.get_mut(&edge.entry) {
+                edgeset.add_successor(edge.exit);
+            }
+            // Add predecessor.
+            if let Some(edgeset) = vertices.get_mut(&edge.exit) {
+                edgeset.add_predecessor(edge.entry);
+            }
+        }
+
+        Some(CFG {start: bin.blocks[0].entry as u32,
+                  end: bin.blocks[last_block].entry as u32,
                   edges: edges,
-                  vertices: bin.blocks.clone()
+                  vertices: vertices
                   })
     }
 
+    /*
     pub fn get_block(&self, addr: u64) -> Option<&BasicBlock> {
         for block in &self.vertices {
             if block.entry == addr {
@@ -135,18 +177,20 @@ impl CFG {
         }
         None
     }
+    */
 
     /** Returns a subgraph of the current graph rooted at 'root'.
      *
      * Warning: May not return a connected component!
      */
+    /*
     pub fn subgraph(&self, root: u64) -> CFG {
         let order = dfs(self, root, &mut HashSet::new(), 0);
-        let vertices: Vec<BasicBlock> = self.vertices.iter()
-                                            .filter(|b| order.order
-                                                             .contains_key(&b.entry))
-                                            .cloned()
-                                            .collect();
+        let vertices = self.vertices.iter()
+                                    .filter(|&(k, v)| order.order
+                                                           .contains_key(k))
+                                    .map(|(&k, &v)| (k, v)) // Need map to collect.
+                                    .collect();
         let edges = self.edges.iter()
                               .filter(|e| order.order.contains_key(&e.entry) ||
                                           order.order.contains_key(&e.exit))
@@ -155,49 +199,51 @@ impl CFG {
 
         CFG {start: root, end: 0, edges: edges, vertices: vertices}
     }
+    */
 
     pub fn components(&self) -> Vec<CFG> {
         let mut components: Vec<CFG> = Vec::new();
-        let mut seen: HashSet<u64> = HashSet::new();
-        let mut queue: VecDeque<u64> = VecDeque::new();
+        let mut seen: HashSet<u32> = HashSet::new();
+        let mut queue: VecDeque<u32> = VecDeque::new();
 
         println!("This CFG has {} vertices and {} edges\n", self.vertices.len(), self.edges.len());
 
-        for vertex in &self.vertices {
-            if !seen.contains(&vertex.entry) {
-                seen.insert(vertex.entry);
-                queue.push_back((*vertex).entry);
+        for vertex in self.vertices.keys() {
+            if !seen.contains(vertex) {
+                seen.insert(*vertex);
+                queue.push_back(*vertex);
 
-                let mut vertices: Vec<BasicBlock> = Vec::new();
+                let mut vertices: HashMap<u32, EdgeSet> = HashMap::new();
                 while let Some(v) = queue.pop_front() {
-                    let block = match self.get_block(v) {
-                        Some(block) => block,
-                        None => continue
-                    };
-                    vertices.push(block.clone());
+                    let mut edgeset = EdgeSet::new_empty();
 
                     for successor in self.get_successors(v) {
                         if !seen.contains(&successor) {
                             seen.insert(successor);
                             queue.push_back(successor);
                         }
+                        edgeset.add_successor(successor);
                     }
                     for predecessor in self.get_predecessors(v) {
                         if !seen.contains(&predecessor) {
                             seen.insert(predecessor);
                             queue.push_back(predecessor);
                         }
+                        edgeset.add_predecessor(predecessor);
                     }
+                    vertices.insert(v, edgeset);
                 }
                 println!("found {} vertices", vertices.len());
-                let address = vertices.iter().map(|v| v.entry).collect::<Vec<_>>();
                 let edges = self.edges.iter()
-                                      .filter(|e| address.contains(&e.entry) ||
-                                                  address.contains(&e.exit))
+                                      .filter(|e| vertices.contains_key(&e.entry) ||
+                                                  vertices.contains_key(&e.exit))
                                       .cloned()
                                       .collect::<HashSet<_>>();
                 println!("Found {} edges", edges.len());
-                components.push(CFG {start: self.find_root(vertices.as_slice(),
+                components.push(CFG {start: self.find_root(vertices.keys()
+                                                                   .cloned()
+                                                                   .collect::<Vec<_>>()
+                                                                   .as_slice(),
                                                            &edges),
                                      end: 0,
                                      vertices: vertices,
@@ -217,7 +263,7 @@ impl CFG {
          */
         for block in blocks {
             let last_insn = &block.instructions[block.instructions.len() - 1];
-            let next_insn = last_insn.address + last_insn.size as u64;
+            let next_insn = (last_insn.address + last_insn.size as u64) as u32;
 
             /* If the last instruction is a control flow changing instruction, we
              * want to add and edge from the current block to the block containing
@@ -228,7 +274,8 @@ impl CFG {
 
                 // We currently can only handle immediate targets and fail on all others.
                 match target {
-                    Some(addr) => edges.insert(Edge::new(block.entry, addr,
+                    Some(addr) => edges.insert(Edge::new(block.entry as u32,
+                                                         addr as u32,
                                                          EdgeType::Directed)),
                     None => true,
                 };
@@ -239,7 +286,7 @@ impl CFG {
                  */
                 if !last_insn.is_unconditional_cflow_ins() {
                     if CFG::block_exists(blocks, next_insn) {
-                        edges.insert(Edge::new(block.entry, next_insn,
+                        edges.insert(Edge::new(block.entry as u32, next_insn,
                                                EdgeType::Directed));
                     }
                 }
@@ -249,29 +296,33 @@ impl CFG {
              * to the next sequential block.
              */
             else {
-                edges.insert(Edge::new(block.entry, next_insn, EdgeType::Directed));
+                edges.insert(Edge::new(block.entry as u32,
+                                       next_insn,
+                                       EdgeType::Directed));
             }
         }
 
         // Create a temporary CFG.
         let last_block = blocks.len() - 1;
         let last_insn = blocks[last_block].instructions.len() - 1;
+        /*
         let cfg = CFG {start: blocks[0].entry,
                        end: blocks[last_block].instructions[last_insn].address,
                        edges: edges.clone(),
                        vertices: blocks.to_vec().clone()};
+         */
 
         /* Iterate over each block and use partial edge set to resolve edges due to
          * returns.
          */
         for block in blocks {
             let last_insn = &block.instructions[block.instructions.len() - 1];
-            let next_insn = last_insn.address + last_insn.size as u64;
-            let mut seen: HashSet<u64> = HashSet::new();
+            let next_insn = (last_insn.address + last_insn.size as u64) as u32;
+            let mut seen: HashSet<u32> = HashSet::new();
 
             // Only process blocks that call functions.
             if last_insn.id == capstone::x86_insn_X86_INS_CALL &&
-               !seen.contains(&block.entry) {
+               !seen.contains(&(block.entry as u32)) {
                 let target = last_insn.get_immediate_target();
 
                 match target {
@@ -289,9 +340,10 @@ impl CFG {
                                  * just place an edge from the calling block to the
                                  * block the function would have returned to.
                                  */
-                                edges.remove(&Edge::new(block.entry, addr,
+                                edges.remove(&Edge::new(block.entry as u32,
+                                                        addr as u32,
                                                         EdgeType::Directed));
-                                edges.insert(Edge::new(block.entry, next_insn,
+                                edges.insert(Edge::new(block.entry as u32, next_insn,
                                                        EdgeType::Directed));
                             }
                         }
@@ -299,7 +351,7 @@ impl CFG {
                     },
                     // If 'target' cannot be resolved, add a pseudo fall through edge.
                     None => if CFG::block_exists(blocks, next_insn) {
-                        edges.insert(Edge::new(block.entry, next_insn,
+                        edges.insert(Edge::new(block.entry as u32, next_insn,
                                                EdgeType::Directed));
                     },
                 };
@@ -309,21 +361,22 @@ impl CFG {
         edges
     }
 
-    fn find_root(&self, vertices: &[BasicBlock], edges: &HashSet<Edge>) -> u64 {
+    fn find_root(&self, vertices: &[u32], edges: &HashSet<Edge>) -> u32 {
         if vertices.len() == 1 {
-            return vertices[0].entry;
+            return vertices[0];
         }
         for vertex in vertices {
-            if self.get_predecessors(vertex.entry).is_empty() {
-                return vertex.entry;
+            if self.get_predecessors(*vertex).is_empty() {
+                return *vertex;
             }
         }
-        vertices[0].entry
+        // FIXME: Return a better value here!
+        vertices[0]
     }
 
-    fn block_exists(blocks: &[BasicBlock], entry: u64) -> bool {
+    fn block_exists(blocks: &[BasicBlock], entry: u32) -> bool {
         for block in blocks {
-            if block.entry == entry {
+            if block.entry == entry as u64 {
                 return true;
             }
         }
@@ -336,18 +389,18 @@ impl fmt::Display for CFG {
         write!(f,
                "<CFG start: 0x{:x}, vertices: [{}], edges: [{}]>",
                self.start,
-               &self.vertices.iter()
-                             .map(|v| format!("0x{:x}", v.entry))
+               &self.vertices.keys()
+                             .map(|v| format!("0x{:x}", v))
                              .collect::<Vec<String>>()
                              .join(", "),
                &self.edges.iter()
-                          .map(|v| format!("{}", v))
+                          .map(|e| format!("{}", e))
                           .collect::<Vec<String>>()
                           .join(", "))
     }
 }
 
-impl Graph<BasicBlock> for CFG {
+impl Graph<u32> for CFG {
     fn get_edges(&self) -> &HashSet<Edge> {
         &self.edges
     }
@@ -356,26 +409,48 @@ impl Graph<BasicBlock> for CFG {
         self.edges.insert(edge)
     }
 
-    fn get_vertices(&self) -> Vec<BasicBlock> {
-        self.vertices.clone()
+    fn get_vertices(&self) -> Vec<u32> {
+        self.vertices.keys().cloned().collect::<Vec<_>>()
     }
 
-    fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
-        self.vertices.push(vertex);
-        true
+    fn add_vertex(&mut self, vertex: u32) -> bool {
+        false
     }
 
-    fn root(&self) -> u64 {
+    fn root(&self) -> u32 {
         self.start
     }
+
+    fn get_edgeset(&self, addr: u32) -> EdgeSet {
+        match self.vertices.get(&addr) {
+            Some(edgeset) => edgeset.clone(),
+            None => EdgeSet::new_empty()
+        }
+    }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct DominatorVertex<V: Vertex> {
-    pub level: u64,
-    pub vertex: V
+#[derive(Clone, PartialEq, Eq)]
+pub struct DominatorVertex {
+    pub level: u32,
+    pub edgeset: EdgeSet,
+    pub dominators: HashSet<u32>,
 }
 
+impl DominatorVertex {
+    pub fn new(edgeset: EdgeSet, level: u32, dominators: HashSet<u32>) -> DominatorVertex {
+        DominatorVertex {level: level,
+                         edgeset: edgeset,
+                         dominators: dominators}
+    }
+
+    pub fn new_empty(level: u32) -> DominatorVertex {
+        DominatorVertex {level: level,
+                         edgeset: EdgeSet::new_empty(),
+                         dominators: HashSet::new()}
+    }
+}
+
+/*
 impl DominatorVertex<BasicBlock> {
     pub fn new(block: BasicBlock, level: u64) -> DominatorVertex<BasicBlock> {
         DominatorVertex {level: level, vertex: block}
@@ -388,52 +463,60 @@ impl Vertex for DominatorVertex<BasicBlock> {
     }
 }
 
+impl Vertex for DominatorVertex<(u64, EdgeSet)> {
+    fn get_id(&self) -> u64 {
+        self.vertex.0
+    }
+}
+
 impl fmt::Display for DominatorVertex<BasicBlock> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "<Vertex 0x{:x} @ level {}>", self.vertex.entry, self.level)
     }
 }
+*/
 
 #[derive(Clone)]
 pub struct DominatorTree {
-    pub root: u64,
-    pub max_level: u64,
-    pub vertices: Vec<DominatorVertex<BasicBlock>>,
+    pub root: u32,
+    pub max_level: u32,
+    pub vertices: HashMap<u32, DominatorVertex>,
     pub edges: HashSet<Edge>,
     pub cfg: CFG,
-    pub dominators: HashMap<u64, HashSet<u64>>
 }
 
 impl DominatorTree {
     /* Requires 'cfg' to be connected! */
-    pub fn new(cfg: &CFG, start: u64) -> DominatorTree {
-        let block_entries: Vec<u64> = cfg.vertices
-                                         .iter()
-                                         .map(|b| b.entry)
+    pub fn new(cfg: &CFG, start: u32) -> DominatorTree {
+        let block_entries: Vec<u32> = cfg.vertices
+                                         .keys()
+                                         .cloned()
                                          .collect();
 
         // Initialize Dom[s] = {s} and Dom[v] = V for v in V - {s}.
-        let mut dominators: HashMap<u64, HashSet<u64>> = HashMap::new();
-        let mut start_dom: HashSet<u64> = HashSet::new();
+        let mut dominators: HashMap<u32, HashSet<u32>> = HashMap::new();
+        let mut start_dom: HashSet<u32> = HashSet::new();
         start_dom.insert(start);
         dominators.insert(start, start_dom);
-        for vertex in &cfg.vertices {
-            if vertex.entry != start {
-                dominators.insert(vertex.entry,
+        println!("[DominatorTree::new] Initializing dominators hashmap");
+        for vertex in cfg.vertices.keys() {
+            if *vertex != start {
+                dominators.insert(*vertex,
                                   HashSet::from_iter(block_entries.iter().cloned()));
             }
         }
         /* Iteratively build Dominator tree.
          */
         let mut updated_dominators = true;
+        println!("[DominatorTree::new] Finding all dominators");
         while updated_dominators {
             updated_dominators = false;
 
             for vertex in &block_entries {
-                let mut dom_set: HashSet<u64> = HashSet::new();
+                let mut dom_set: HashSet<u32> = HashSet::new();
                 dom_set.insert(*vertex);
 
-                let mut intersect: HashSet<u64> = HashSet::new();
+                let mut intersect: HashSet<u32> = HashSet::new();
                 for predecessor in cfg.get_predecessors(*vertex) {
                     assert!(block_entries.contains(&predecessor));
                     if intersect.is_empty() {
@@ -448,6 +531,10 @@ impl DominatorTree {
                 }
 
                 dom_set = dom_set.union(&intersect).cloned().collect();
+
+                /* FIXME: Hack to get blocks without predecessors and not the start
+                 * vertex to work without eliminating the start vertex as a dominator.
+                 */
                 if !dom_set.contains(&start) {
                     dom_set.insert(start);
                 }
@@ -461,25 +548,32 @@ impl DominatorTree {
             }
         }
 
+        // Create set of DominatorVertex to preserve level information.
+        let mut dom_vertices: HashMap<u32, DominatorVertex> = HashMap::new();
+        let mut max_level: u32 = 0;
+
+        // Store idoms so we don't have to calculate them twice.
+        let mut idoms: HashMap<u32, u32> = HashMap::new();
+
         // Add each (idom(x), x) edge.
         let mut edges: HashSet<Edge> = HashSet::new();
+        println!("[DominatorTree::new] Creating edge set");
         for addr in block_entries {
             if addr != start {
-                edges.insert(Edge::new(DominatorTree::idom(addr, &dominators), addr,
-                                       EdgeType::DEdge));
+                let idom = DominatorTree::idom(addr, &dominators);
+                edges.insert(Edge::new(idom, addr, EdgeType::DEdge));
+                idoms.insert(addr, idom);
             }
         }
 
-        // Create set of DominatorVertex to preserve level information.
-        let mut dom_vertices: Vec<DominatorVertex<BasicBlock>> = Vec::new();
-        let mut max_level: u64 = 0;
-
-        let mut queue: VecDeque<(u64, u64)> = VecDeque::new();
-        queue.push_back((start, 0));
-
+        /*
         let mut seen: HashSet<u64> = HashSet::new();
         seen.insert(start);
+        */
 
+        let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
+        queue.push_back((start, 0));
+        println!("[DominatorTree::new] Creating vertex set");
         while !queue.is_empty() {
             let (vertex, level) = match queue.pop_front() {
                 Some((vertex, level)) => (vertex, level),
@@ -490,12 +584,13 @@ impl DominatorTree {
                 max_level = level;
             }
 
-            // Add a queue item to the DominatorVertex set.
-            match cfg.vertices.iter().position(|b| b.entry == vertex) {
-                Some(i) => dom_vertices.push(DominatorVertex::new(cfg.vertices[i].clone(),
-                                                                  level)),
-                None => panic!("Node 0x{:x} not in set of basic blocks!", vertex),
-            };
+            let mut edgeset = EdgeSet::new_empty();
+
+            // Not all vertices have predecessors, so check the idoms HashMap.
+            if let Some(&idom) = idoms.get(&vertex) {
+                edgeset.add_predecessor(idom);
+            }
+
             /* Iterate through all D edges that originate from this vertex and add
              * them to the queue.
              */
@@ -505,17 +600,30 @@ impl DominatorTree {
                              .cloned()
                              .collect::<Vec<_>>() {
                 queue.push_back((edge.exit, level + 1));
+                edgeset.add_successor(edge.exit);
             }
+
+            // Add a queue item to the DominatorVertex set.
+            dom_vertices.insert(vertex,
+                                DominatorVertex::new(edgeset,
+                                                     level,
+                                                     dominators[&vertex].clone()));
         }
 
         assert_eq!(cfg.vertices.len(), dom_vertices.len());
 
-        DominatorTree {root: start, max_level: max_level, vertices: dom_vertices,
-                       edges: edges, cfg: cfg.clone(), dominators: dominators}
+        println!("[DominatorTree::new] Done");
+        DominatorTree {root: start,
+                       max_level: max_level,
+                       vertices: dom_vertices,
+                       edges: edges,
+                       cfg: cfg.clone()}
     }
 
-    fn idom(vertex: u64, dominators: &HashMap<u64, HashSet<u64>>) -> u64 {
-        let sdoms: HashSet<u64> = dominators[&vertex].iter()
+    /** Returns the immediate dominator of 'vertex'.
+     */
+    fn idom(vertex: u32, dominators: &HashMap<u32, HashSet<u32>>) -> u32 {
+        let sdoms: HashSet<u32> = dominators[&vertex].iter()
                                                      .filter(|&&d| d != vertex)
                                                      .cloned()
                                                      .collect();
@@ -529,15 +637,15 @@ impl DominatorTree {
     }
 
     /* Returns true if x = idom(y) and false otherwise. */
-    pub fn is_idom(&self, x: u64, y: u64) -> bool {
+    pub fn is_idom(&self, x: u32, y: u32) -> bool {
         self.edges.contains(&Edge::new(x, y, EdgeType::DEdge))
     }
 
-    pub fn dominates(&self, x: u64, y: u64) -> bool {
-        self.dominators[&y].contains(&x)
+    pub fn dominates(&self, x: u32, y: u32) -> bool {
+        self.vertices[&y].dominators.contains(&x)
     }
 
-    pub fn from_binary(bin: &Binary, start: u64) -> Option<DominatorTree> {
+    pub fn from_binary(bin: &Binary, start: u32) -> Option<DominatorTree> {
         match bin.cfg() {
             Some(cfg) => Some(DominatorTree::new(&cfg, start)),
             None => None,
@@ -545,7 +653,7 @@ impl DominatorTree {
     }
 }
 
-impl Graph<BasicBlock> for DominatorTree {
+impl Graph<u32> for DominatorTree {
     fn get_edges(&self) -> &HashSet<Edge> {
         &self.edges
     }
@@ -554,35 +662,43 @@ impl Graph<BasicBlock> for DominatorTree {
         self.edges.insert(edge)
     }
 
-    fn get_vertices(&self) -> Vec<BasicBlock> {
-        let mut vertices: Vec<BasicBlock> = Vec::new();
-        for vertex in &self.vertices {
-            vertices.push(vertex.vertex.clone());
-        }
-        vertices
+    fn get_vertices(&self) -> Vec<u32> {
+        self.vertices.keys().cloned().collect()
     }
 
-    fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
+    fn add_vertex(&mut self, vertex: u32) -> bool {
         false
     }
 
-    fn root(&self) -> u64 {
+    fn root(&self) -> u32 {
         self.root
+    }
+
+    fn get_edgeset(&self, addr: u32) -> EdgeSet {
+        match self.vertices.get(&addr) {
+            Some(domset) => domset.edgeset.clone(),
+            None => EdgeSet::new_empty()
+        }
     }
 }
 
 pub struct DJGraph {
-    pub start: u64,
-    pub max_level: u64,
-    pub vertices: Vec<DominatorVertex<BasicBlock>>,
+    pub start: u32,
+    pub max_level: u32,
+    pub vertices: HashMap<u32, DominatorVertex>,
     pub edges: HashSet<Edge>,
 }
 
 impl DJGraph {
-    pub fn new(cfg: &CFG, start: u64) -> DJGraph {
+    pub fn new(cfg: &CFG, start: u32) -> DJGraph {
+        println!("[DJGraph::new] Creating dominator tree on CFG with {} vertices and {} edges",
+                 cfg.vertices.len(),
+                 cfg.edges.len());
         let dom_tree: DominatorTree = DominatorTree::new(&cfg, start);
+        println!("[DJGraph::new] cloning dominator tree edges");
         let mut edges = dom_tree.edges.clone();
 
+        println!("[DJGraph::new] Adding J edges");
         // Add J edges.
         for edge in &cfg.edges {
             // Ignore D edges.
@@ -606,6 +722,7 @@ impl DJGraph {
      */
     pub fn detect_loops(&mut self) -> Vec<Loop> {
         let mut loops: Vec<Loop> = Vec::new();
+        println!("[DJGraph::detect_loops] Detecting loops");
 
         // Need to identify sp-back edges from a spanning tree created via DFS.
         let ordering = dfs(self, self.start, &mut HashSet::new(), 0);
@@ -613,21 +730,21 @@ impl DJGraph {
         let mut sp_back_edges = st.get_edges_of_type(EdgeType::SPBack);
 
         // Group vertices by level, from lowest to highest, and store in a vector.
-        let mut levels: Vec<Vec<DominatorVertex<BasicBlock>>> = Vec::new();
+        let mut levels: Vec<Vec<u32>> = Vec::new();
         for level in (0..self.max_level + 1).rev() {
             levels.push(self.vertices.iter()
-                                     .filter(|v| v.level == level)
-                                     .cloned()
+                                     .filter(|&(k, v)| v.level == level)
+                                     .map(|(&k, _)| k)
                                      .collect::<Vec<_>>())
         }
-        for level in levels {
+        for (level, vertices) in levels.iter().enumerate() {
             let mut irreducible_loop = false;
-            for vertex in level {
+            for vertex in vertices {
 
                 // Get call incoming edges (m_i, vertex).
                 for edge in self.edges.clone()
                                       .iter()
-                                      .filter(|e| e.exit == vertex.vertex.entry)
+                                      .filter(|e| e.exit == *vertex)
                                       .collect::<HashSet<_>>() {
                     /* Reducible and irreducible loops can be identified by the type
                      * of edges discovered.
@@ -642,18 +759,20 @@ impl DJGraph {
                         },
                         // BJ edges identify reducible loops.
                         EdgeType::BJEdge => {
-                            let body = self.reach_under(edge.entry, edge.exit, vertex.level);
-                            self.collapse_vertices(body.as_slice(), vertex.vertex.entry);
-                            loops.push(Loop {entry: vertex.vertex.entry, body: body});
+                            let body = self.reach_under(edge.entry,
+                                                        edge.exit,
+                                                        level as u32);
+                            self.collapse_vertices(body.as_slice(), *vertex);
+                            loops.push(Loop {entry: *vertex, body: body});
                         },
                         _ => ()
                     };
                 }
                 if irreducible_loop {
                     let mut params = SCCParam::new(&self.edges);
-                    strongly_connected_components(vertex.vertex.entry, &mut params);
+                    strongly_connected_components(*vertex, &mut params);
 
-                    let body = params.get_component_as_vec(vertex.vertex.entry);
+                    let body = params.get_component_as_vec(*vertex);
                     match body.first() {
                         Some(&first) => {
                             self.collapse_vertices(body.as_slice(), first);
@@ -670,7 +789,7 @@ impl DJGraph {
         loops
     }
 
-    pub fn collapse_vertices(&mut self, vertices: &[u64], to_vertex: u64) {
+    pub fn collapse_vertices(&mut self, vertices: &[u32], to_vertex: u32) {
         let edges = self.edges.iter()
                               .filter(|e| vertices.contains(&e.entry) ||
                                           vertices.contains(&e.exit))
@@ -704,26 +823,28 @@ impl DJGraph {
             self.edges.insert(edge);
         }
         self.vertices = self.vertices.iter()
-                                     .filter(|v| v.vertex.entry == to_vertex ||
-                                                 !vertices.contains(&v.vertex.entry))
-                                     .cloned()
-                                     .collect::<Vec<_>>();
+                                     .filter(|&(k, _)| *k == to_vertex ||
+                                                       !vertices.contains(&k))
+                                     .map(|(&k, v)| (k, v.clone()))
+                                     .collect::<HashMap<_, _>>();
     }
 
     /** Finds all vertices on equal or higher valued levels that can reach vertex x
      * without passing through vertex y.
      */
-    fn reach_under(&self, x: u64, y: u64, level: u64) -> Vec<u64> {
-        let mut vertices: Vec<u64> = Vec::new();
-        let mut seen: HashSet<u64> = HashSet::new();
+    fn reach_under(&self, x: u32, y: u32, level: u32) -> Vec<u32> {
+        let mut vertices: Vec<u32> = Vec::new();
+        let mut seen: HashSet<u32> = HashSet::new();
 
         vertices.push(x);
-        for vertex in self.vertices.iter()
-                                   .filter(|v| v.level >= level && v.vertex.entry != y)
-                                   .collect::<Vec<_>>() {
-            if let Some(path) = self.path(vertex.vertex.entry, x, level, &mut seen) {
+        for (vertex, domset) in self.vertices.iter()
+                                             .filter(|&(k, v)| v.level >= level &&
+                                                               *k != y)
+                                             .map(|(&k, v)| (k, v.clone()))
+                                             .collect::<HashMap<_, _>>() {
+            if let Some(path) = self.path(vertex, x, level, &mut seen) {
                 if !path.contains(&y) {
-                    vertices.push(vertex.vertex.entry);
+                    vertices.push(vertex);
                 }
             }
         }
@@ -731,8 +852,8 @@ impl DJGraph {
         vertices
     }
 
-    pub fn path(&self, origin: u64, destination: u64, level: u64,
-                seen: &mut HashSet<u64>) -> Option<Vec<u64>> {
+    pub fn path(&self, origin: u32, destination: u32, level: u32,
+                seen: &mut HashSet<u32>) -> Option<Vec<u32>> {
         seen.insert(origin);
         for edge in self.edges.iter()
                               .filter(|e| e.entry == origin && !seen.contains(&e.exit))
@@ -744,7 +865,7 @@ impl DJGraph {
             }
             match self.path(edge.exit, destination, level, seen) {
                 Some(mut v) => {
-                    let mut ret: Vec<u64> = vec![origin];
+                    let mut ret: Vec<u32> = vec![origin];
                     ret.append(&mut v);
                     return Some(ret);
                 }
@@ -755,15 +876,16 @@ impl DJGraph {
         None
     }
 
-    pub fn vertex_at(&self, addr: u64) -> Option<DominatorVertex<BasicBlock>> {
-        for vertex in &self.vertices {
-            if vertex.vertex.entry == addr {
-                return Some(vertex.clone());
+    pub fn vertex_at(&self, addr: u32) -> Option<DominatorVertex> {
+        for (vertex, domset) in &self.vertices {
+            if *vertex == addr {
+                return Some(domset.clone());
             }
         }
         None
     }
 
+    /*
     pub fn vertices_at_level(&self, level: u64) -> HashSet<u64> {
         let mut intermediate_vertices: VecDeque<u64> = VecDeque::new();
 
@@ -785,9 +907,10 @@ impl DJGraph {
 
         HashSet::from_iter(intermediate_vertices.iter().cloned())
     }
+    */
 }
 
-impl Graph<BasicBlock> for DJGraph {
+impl Graph<u32> for DJGraph {
     fn get_edges(&self) -> &HashSet<Edge> {
         &self.edges
     }
@@ -796,25 +919,28 @@ impl Graph<BasicBlock> for DJGraph {
         self.edges.insert(edge)
     }
 
-    fn get_vertices(&self) -> Vec<BasicBlock> {
-        let mut vertices: Vec<BasicBlock> = Vec::new();
-        for vertex in &self.vertices {
-            vertices.push(vertex.vertex.clone());
-        }
-        vertices
+    fn get_vertices(&self) -> Vec<u32> {
+        self.vertices.keys().cloned().collect()
     }
 
-    fn add_vertex(&mut self, vertex: BasicBlock) -> bool {
+    fn add_vertex(&mut self, vertex: u32) -> bool {
         false
     }
 
-    fn root(&self) -> u64 {
+    fn root(&self) -> u32 {
         self.start
+    }
+
+    fn get_edgeset(&self, addr: u32) -> EdgeSet {
+        match self.vertices.get(&addr) {
+            Some(domset) => domset.edgeset.clone(),
+            None => EdgeSet::new_empty()
+        }
     }
 }
 
 pub struct SpanningTree {
-    vertices: Vec<u64>,
+    vertices: Vec<u32>,
     edges: HashSet<Edge>
 }
 
@@ -862,7 +988,7 @@ impl SpanningTree {
         self.edges.iter().filter(|v| v.edge_type == edge_type).cloned().collect()
     }
 
-    pub fn path_to(&self, origin: u64, destination: u64) -> Option<Vec<u64>> {
+    pub fn path_to(&self, origin: u32, destination: u32) -> Option<Vec<u32>> {
         SpanningTree::path(origin,
                            destination,
                            &self.edges.iter()
@@ -871,7 +997,7 @@ impl SpanningTree {
                                       .collect::<HashSet<_>>())
     }
 
-    pub fn collapse_vertices(&mut self, vertices: &[u64], to_vertex: u64) {
+    pub fn collapse_vertices(&mut self, vertices: &[u32], to_vertex: u32) {
         let edges = self.edges.iter()
                               .filter(|e| vertices.contains(&e.entry) ||
                                           vertices.contains(&e.exit))
@@ -911,8 +1037,8 @@ impl SpanningTree {
                                      .collect::<Vec<_>>();
     }
 
-    fn path(origin: u64, destination: u64, tree_edges: &HashSet<Edge>)
-            -> Option<Vec<u64>> {
+    fn path(origin: u32, destination: u32, tree_edges: &HashSet<Edge>)
+            -> Option<Vec<u32>> {
         for edge in tree_edges.iter()
                               .filter(|e| e.entry == origin)
                               .collect::<HashSet<_>>() {
@@ -921,7 +1047,7 @@ impl SpanningTree {
             }
             match SpanningTree::path(edge.exit, destination, tree_edges) {
                 Some(mut v) => {
-                    let mut ret: Vec<u64> = vec![origin];
+                    let mut ret: Vec<u32> = vec![origin];
                     ret.append(&mut v);
                     return Some(ret);
                 }
@@ -935,7 +1061,7 @@ impl SpanningTree {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Ordering {
-    order: HashMap<u64, u64>,
+    order: HashMap<u32, u32>,
     edges: HashSet<Edge>
 }
 
@@ -951,8 +1077,8 @@ impl Ordering {
     }
 }
 
-pub fn dfs<G: Graph<BasicBlock>>(graph: &G, root: u64, seen: &mut HashSet<u64>,
-                                 depth: u64) -> Ordering {
+pub fn dfs<G: Graph<u32>>(graph: &G, root: u32, seen: &mut HashSet<u32>,
+                                     depth: u32) -> Ordering {
     let mut order: Ordering = Ordering::new();
 
     order.order.insert(root, depth);
@@ -968,19 +1094,20 @@ pub fn dfs<G: Graph<BasicBlock>>(graph: &G, root: u64, seen: &mut HashSet<u64>,
     order
 }
 
-pub fn connected_components<G: Graph<BasicBlock>>(graph: &G) -> Vec<Ordering> {
+/*
+pub fn connected_components<G: Graph<(u64, EdgeSet)>>(graph: &G) -> Vec<Ordering> {
     let mut components: Vec<Ordering> = Vec::new();
-    let mut vertices: HashSet<BasicBlock> = HashSet::from_iter(graph.get_vertices()
-                                                                    .iter()
-                                                                    .cloned());
+    let mut vertices: HashSet<u64> = HashSet::from_iter(graph.get_vertices()
+                                                              .iter()
+                                                              .cloned());
 
     while !vertices.is_empty() {
         for vertex in &vertices {
             /* If this vertex has no predecessors, treat it as a starting point and
              * get the subgraph.
              */
-            if graph.get_predecessors(vertex.entry).is_empty() {
-                components.push(dfs(graph, vertex.entry, &mut HashSet::new(), 0));
+            if graph.get_predecessors(vertex).is_empty() {
+                components.push(dfs(graph, vertex, &mut HashSet::new(), 0));
                 break;
             }
         }
@@ -998,12 +1125,13 @@ pub fn connected_components<G: Graph<BasicBlock>>(graph: &G) -> Vec<Ordering> {
     }
     components
 }
+*/
 
 pub struct SCCParam {
     pub edges: HashSet<Edge>,
-    pub seen: HashSet<u64>,
-    pub stack: Vec<u64>,
-    pub vertices: HashMap<u64, SCCValue>
+    pub seen: HashSet<u32>,
+    pub stack: Vec<u32>,
+    pub vertices: HashMap<u32, SCCValue>
 }
 
 impl SCCParam {
@@ -1014,8 +1142,8 @@ impl SCCParam {
                   vertices: HashMap::new()}
     }
 
-    pub fn get_component(&self, root: u64) -> HashSet<u64> {
-        let mut component: HashSet<u64> = HashSet::new();
+    pub fn get_component(&self, root: u32) -> HashSet<u32> {
+        let mut component: HashSet<u32> = HashSet::new();
 
         for (vertex, val) in &self.vertices {
             if val.root == root && val.in_component {
@@ -1026,16 +1154,16 @@ impl SCCParam {
         component
     }
 
-    pub fn get_component_as_vec(&self, root: u64) -> Vec<u64> {
+    pub fn get_component_as_vec(&self, root: u32) -> Vec<u32> {
         Vec::from_iter(self.get_component(root).iter().cloned())
     }
 
-    pub fn insert(&mut self, vertex: u64, root: u64, in_component: bool) {
+    pub fn insert(&mut self, vertex: u32, root: u32, in_component: bool) {
         self.vertices.insert(vertex, SCCValue {root: root,
                                                in_component: in_component});
     }
 
-    pub fn update(&mut self, vertex: &u64, root: Option<u64>,
+    pub fn update(&mut self, vertex: &u32, root: Option<u32>,
                   in_component: Option<bool>) {
         match self.vertices.get_mut(vertex) {
             Some(val) => {
@@ -1052,7 +1180,7 @@ impl SCCParam {
         };
     }
 
-    pub fn is_in_component(&self, vertex: u64) -> bool {
+    pub fn is_in_component(&self, vertex: u32) -> bool {
         match self.vertices.get(&vertex) {
             Some(val) => return val.in_component,
             None => panic!("[SCCParam::is_in_component] vertex 0x{:x} not in hash map!",
@@ -1062,7 +1190,7 @@ impl SCCParam {
 
     /** Find the value that was processed first by checking each position on the stack.
      */
-    pub fn min(&self, x: u64, y: u64) -> u64 {
+    pub fn min(&self, x: u32, y: u32) -> u32 {
         match self.stack.iter().position(|&p| p == x) {
             Some(i) => match self.stack.iter().position(|&p| p == y) {
                 Some(j) => {
@@ -1077,7 +1205,7 @@ impl SCCParam {
         };
     }
 
-    pub fn min_of_roots(&self, x: u64, y: u64) -> u64 {
+    pub fn min_of_roots(&self, x: u32, y: u32) -> u32 {
         match self.vertices.get(&x) {
             Some(x_val) => match self.vertices.get(&y) {
                 Some(y_val) => self.min(x_val.root, y_val.root),
@@ -1090,13 +1218,13 @@ impl SCCParam {
 }
 
 pub struct SCCValue {
-    pub root: u64,
+    pub root: u32,
     pub in_component: bool
 }
 
 /** An implementation of Tarjan's Strongly Connected Component algorithm.
  */
-pub fn strongly_connected_components(vertex: u64, params: &mut SCCParam) {
+pub fn strongly_connected_components(vertex: u32, params: &mut SCCParam) {
     params.seen.insert(vertex);
     params.stack.push(vertex);
     params.insert(vertex, vertex, false);
@@ -1133,8 +1261,8 @@ pub fn strongly_connected_components(vertex: u64, params: &mut SCCParam) {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Loop {
-    pub entry: u64,
-    pub body: Vec<u64>
+    pub entry: u32,
+    pub body: Vec<u32>
 }
 
 impl fmt::Display for Loop {
