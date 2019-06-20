@@ -1,4 +1,5 @@
 use binary::binary::Binary;
+use regex::bytes::RegexSet;
 use statistics;
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -9,8 +10,8 @@ pub struct Sample{
     pub counts: HashMap<String, u64>,
     pub bitops: u64,
     pub loops: u64,
-    pub strings: Vec<String>,
-    pub constants: Vec<Constants>
+    pub strings: Vec<usize>,
+    pub constants: Vec<usize>
 }
 
 impl Sample {
@@ -95,16 +96,24 @@ impl Sample {
 
     }
 
-    pub fn strings(bin: &Binary) -> Vec<String> {
-        let mut strings_found: Vec<String> = Vec::new();
-
-        strings_found
+    pub fn strings(bin: &Binary) -> Vec<usize> {
+        lazy_static! {
+            static ref KW_SET: RegexSet = match RegexSet::new(&KEYWORDS) {
+                Ok(set) => set,
+                Err(e) => panic!("Error creating keyword regex set: {}", e)
+            };
+        }
+        KW_SET.matches(bin.bytes.as_slice()).into_iter().collect()
     }
 
-    pub fn constants(bin: &Binary) -> Vec<Constants> {
-        let mut constants_found: Vec<Constants> = Vec::new();
-
-        constants_found
+    pub fn constants(bin: &Binary) -> Vec<usize> {
+        lazy_static! {
+            static ref CONST_SET: RegexSet = match RegexSet::new(&CONSTANTS) {
+                Ok(set) => set,
+                Err(e) => panic!("Error creating keyword regex set: {}", e)
+            };
+        }
+        CONST_SET.matches(bin.bytes.as_slice()).into_iter().collect()
     }
 }
 
@@ -112,10 +121,13 @@ impl Sample {
 pub enum Constants {
 }
 
-static KEYWORDS: [&'static str;   6] = ["aes",
+static KEYWORDS: [&'static str;   9] = [r"aes",
                                         "rsa",
                                         "des",
                                         "chacha",
                                         "ransom",
-                                        "encrypt"];
-static CONSTANTS: [u8;  0] = [];
+                                        "encrypt",
+                                        "AES",
+                                        "RSA",
+                                        "DES"];
+static CONSTANTS: [&'static str; 0] = [];
