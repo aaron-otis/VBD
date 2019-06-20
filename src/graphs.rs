@@ -518,7 +518,6 @@ impl DominatorTree {
 
                 let mut intersect: HashSet<u32> = HashSet::new();
                 for predecessor in cfg.get_predecessors(*vertex) {
-                    assert!(block_entries.contains(&predecessor));
                     if intersect.is_empty() {
                         intersect = dominators[&predecessor].clone();
                     }
@@ -527,7 +526,6 @@ impl DominatorTree {
                                              .cloned()
                                              .collect();
                     }
-                    assert!(intersect.contains(&start));
                 }
 
                 dom_set = dom_set.union(&intersect).cloned().collect();
@@ -642,7 +640,15 @@ impl DominatorTree {
     }
 
     pub fn dominates(&self, x: u32, y: u32) -> bool {
-        self.vertices[&y].dominators.contains(&x)
+        //self.vertices[&y].dominators.contains(&x)
+        match self.vertices.get(&y) {
+            Some(vertex) => vertex.dominators.contains(&x),
+            None => {
+                // FIXME: This is likely caused by an incomplete vertex set!
+                println!("0x{:x} was not found in the vertex set!", y);
+                false
+            }
+        }
     }
 
     pub fn from_binary(bin: &Binary, start: u32) -> Option<DominatorTree> {
