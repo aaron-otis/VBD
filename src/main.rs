@@ -216,7 +216,7 @@ fn analyze_binary(options: &Options, collection: &Collection) -> Result<(), Erro
                 println!("Successfully disassembled binary")
             },
             Err(e) => {
-                return Err(Error::DisassemblyError(e.to_string());
+                return Err(Error::DisassemblyError(e.to_string()));
             },
         };
     }
