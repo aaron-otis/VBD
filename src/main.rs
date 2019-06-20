@@ -25,6 +25,7 @@ use mongodb::coll::Collection;
 use sample::Sample;
 use statistics::{count_instructions, print_statistics};
 use std::{env, fmt, process};
+use std::time::{Duration, Instant};
 
 enum Error {
     BinaryError,
@@ -170,6 +171,7 @@ fn main() {
 }
 
 fn analyze_binary(options: &Options, collection: Collection) -> Result<(), Error> {
+    let now = Instant::now();
     let mut b: Binary = match Binary::new(options.fname.clone()) {
         Ok(bin) => bin,
         Err(_e) => return Err(Error::BinaryError)
@@ -221,6 +223,7 @@ fn analyze_binary(options: &Options, collection: Collection) -> Result<(), Error
         let mut sample: Sample = Sample::new(b);
         sample.analysis();
 
+        let time = now.elapsed();
         if options.verbose {
             statistics::print_statistics(&sample.counts);
             println!("Detected {} loops", sample.loops);
@@ -228,9 +231,13 @@ fn analyze_binary(options: &Options, collection: Collection) -> Result<(), Error
             println!("Detected {} cryptographic constants", sample.constants.len());
             println!("Detected {} strings that are commonly seen in ransom notes",
                      sample.strings.len());
+            println!("Processed {} in {}.{} seconds",
+                     options.fname,
+                     time.as_secs(),
+                     time.subsec_nanos());
         }
 
-        // 
+        // Add data to the database.
     }
 
     Ok(())
