@@ -1,8 +1,8 @@
 use std::fmt;
 use bfd::load_binary;
 use std::ffi::CStr;
-use std::collections::HashSet;
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use super::section::*;
 use super::symbol::*;
@@ -52,6 +52,7 @@ pub struct Binary {
     pub symbols: Vec<Symbol>,
     pub functions: Vec<Function>,
     pub blocks: Vec<BasicBlock>,
+    pub bytes: Vec<u8>
 }
 
 impl Binary {
@@ -322,8 +323,8 @@ impl Hash for BasicBlock {
 }
 
 impl graphs::Vertex for BasicBlock {
-    fn get_id(&self) -> u64 {
-        self.entry
+    fn get_id(&self) -> u32 {
+        self.entry as u32
     }
 }
 
