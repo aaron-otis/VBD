@@ -451,3 +451,45 @@ impl Hash for Instruction {
         self.op_str.hash(state);
     }
 }
+
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            LoadError::SectionNotFound => "Section not found",
+            LoadError::FileNotFound => "File not found",
+            LoadError::OpenFileError => "Error opening file",
+            LoadError::InvalidFormat => "Invalid format",
+            LoadError::UnrecognizedFormat => "Unrecognized format",
+            LoadError::UnsupportedType => "Unsupported type",
+            LoadError::UnsupportedArch => "Unsupported architecture",
+            LoadError::NoSymbols => "No symbols found",
+            LoadError::SecReadErr => "Error reading sections",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl fmt::Display for BinaryType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            BinaryType::BinTypeAuto => "Auto",
+            BinaryType::BinTypeELF => "ELF",
+            BinaryType::BinTypePE => "PE",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl fmt::Display for BinaryArch {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            BinaryArch::ArchNone => "None",
+            BinaryArch::ArchX86 => "x86",
+            BinaryArch::ArchArm => "arm",
+            BinaryArch::ArchX86_64 => "x86_64",
+            BinaryArch::ArchArm64 => "arm64",
+            BinaryArch::ArchRISCV => "RISC V",
+        };
+        write!(f, "{}", s)
+    }
+}
