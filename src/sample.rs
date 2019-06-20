@@ -1,4 +1,5 @@
 use binary::binary::Binary;
+use mongodb;
 use regex::bytes::RegexSet;
 use statistics;
 use std::collections::HashMap;
@@ -114,6 +115,14 @@ impl Sample {
             };
         }
         CONST_SET.matches(bin.bytes.as_slice()).into_iter().collect()
+    }
+
+    pub fn counts_as_bson(&self) -> Result<mongodb::Bson, mongodb::EncoderError> {
+        let counts: HashMap<String, i64> = self.counts.iter()
+                                                      .map(|(k, &v)| (k.clone(),
+                                                                      v as i64))
+                                                      .collect();
+        mongodb::to_bson(&counts)
     }
 }
 
