@@ -29,9 +29,9 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 enum Error {
-    BinaryError,
-    DisassemblyError,
-    DBError,
+    BinaryError(String),
+    DisassemblyError(String),
+    DBError(String),
 }
 
 enum DBResult {
@@ -187,7 +187,7 @@ fn analyze_binary(options: &Options, collection: &Collection) -> Result<(), Erro
     let now = Instant::now();
     let mut b: Binary = match Binary::new(options.fname.clone()) {
         Ok(bin) => bin,
-        Err(_e) => return Err(Error::BinaryError)
+        Err(e) => return Err(Error::BinaryError(e.to_string()))
     };
 
     println!("File:\t{}\nType:\t{}\nArch:\t{}\nEntry:\t0x{:016x}\n",
@@ -216,8 +216,7 @@ fn analyze_binary(options: &Options, collection: &Collection) -> Result<(), Erro
                 println!("Successfully disassembled binary")
             },
             Err(e) => {
-                println!("Error disassembling: {}", e);
-                return Err(Error::DisassemblyError);
+                return Err(Error::DisassemblyError(e.to_string());
             },
         };
     }
@@ -305,9 +304,9 @@ fn insert_or_replace(collection: &Collection, search_for: Document,
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
-            Error::BinaryError => "Error opening binary",
-            Error::DisassemblyError => "Error disassembling binary",
-            Error::DBError => "Database error",
+            Error::BinaryError(e) => "Error opening binary",
+            Error::DisassemblyError(e) => "Error disassembling binary",
+            Error::DBError(e) => "Database error",
         };
         write!(f, "{}", s)
     }
