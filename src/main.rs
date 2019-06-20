@@ -1,6 +1,11 @@
 extern crate argparse;
 extern crate regex;
-#[macro_use] extern crate lazy_static;
+
+#[macro_use]
+extern crate lazy_static;
+
+#[macro_use(bson, doc)]
+extern crate mongodb;
 
 pub mod binary;
 pub mod conversions;
@@ -12,11 +17,26 @@ pub mod statistics;
 pub mod graphs;
 pub mod sample;
 
-use binary::binary::Binary;
-use statistics::{count_instructions, print_statistics};
 use argparse::{ArgumentParser, StoreTrue, Store};
-use std::{env, process};
+use binary::binary::Binary;
+use mongodb::{Client, ThreadedClient};
+use mongodb::db::ThreadedDatabase;
+use mongodb::coll::Collection;
 use sample::Sample;
+use statistics::{count_instructions, print_statistics};
+use std::{env, fmt, process};
+
+enum Error {
+    BinaryError,
+    DisassemblyError,
+}
+
+enum Platform {
+    Unix,
+    Linux,
+    Windows,
+    Unknown,
+}
 
 struct Options {
     fname: String,
@@ -27,6 +47,10 @@ struct Options {
     stats: bool,
     loops: bool,
     analysis: bool,
+    server: String,
+    port: u16,
+    dbname: String,
+    verbose: bool,
     all: bool,
 }
 
@@ -41,6 +65,10 @@ fn main() {
         stats: false,
         loops: false,
         analysis: false,
+        server: "localhost".to_string(),
+        port: 27017,
+        dbname: "statistics".to_string(),
+        verbose: false,
         all: false,
     };
 
@@ -79,6 +107,22 @@ fn main() {
           .add_option(&["--analyze"],
                       StoreTrue,
                       "Analyze the given binary for potential ransomware signs.");
+        ap.refer(&mut options.server)
+          .add_option(&["--server"],
+                      Store,
+                      "The MongoDB server to connect to (default: localhost).");
+        ap.refer(&mut options.port)
+          .add_option(&["--port"],
+                      Store,
+                      "The port of the MongoDB server to connect to (default: 27017).");
+        ap.refer(&mut options.dbname)
+          .add_option(&["--database"],
+                      Store,
+                      "The name of the MongoDB database to use (default: statistics).");
+        ap.refer(&mut options.verbose)
+          .add_option(&["-v", "--verbose"],
+                      StoreTrue,
+                      "Be verbose.");
         ap.refer(&mut options.all).add_option(&["-A", "--all"],
                                               StoreTrue, "Enable all options");
         ap.parse_args_or_exit();
@@ -91,20 +135,52 @@ fn main() {
         process::exit(1);
     }
 
-    // Parse binary.
-    let mut b: Binary = match Binary::new(options.fname) {
-        Ok(bin) => bin,
-        Err(_e) => panic!("unable to load binary"),
-    };
-
-    println!("File:\t{}\nType:\t{}\nArch:\t{}\nEntry:\t0x{:016x}\n",
-               b.filename, b.type_str, b.arch_str, b.entry);
     if options.all {
         options.sections = true;
         options.symbols = true;
         options.dump_sec = true;
         options.disam = true;
     }
+
+    // Connect to database.
+    let client = match Client::connect(&options.server, options.port) {
+        Ok(client) => client,
+        Err(e) => panic!("Database connection failed: {}", e)
+    };
+
+    let platform: Platform;
+    if cfg!(linux) {
+        platform = Platform::Linux;
+    }
+    else if cfg!(unix) {
+        platform = Platform::Unix;
+    }
+    else if cfg!(windows) {
+        platform = Platform::Windows;
+    }
+    else {
+        platform = Platform::Unknown;
+    }
+    let collection = client.db(&options.dbname).collection(&platform.to_string());
+
+    match analyze_binary(&options, collection) {
+        Ok(_) => (),
+        Err(e) => println!("Failed to analyze '{}': {}", options.fname, e)
+    };
+}
+
+fn analyze_binary(options: &Options, collection: Collection) -> Result<(), Error> {
+    let mut b: Binary = match Binary::new(options.fname.clone()) {
+        Ok(bin) => bin,
+        Err(_e) => return Err(Error::BinaryError)
+    };
+
+    println!("File:\t{}\nType:\t{}\nArch:\t{}\nEntry:\t0x{:016x}\n",
+             b.filename,
+             b.type_str,
+             b.arch_str,
+             b.entry);
+
     if options.sections {
         b.print_sections();
     }
@@ -121,10 +197,13 @@ fn main() {
     // Disassemble the binary if any of these options are selected.
     if options.disam || options.stats || options.loops {
         match b.disassemble() {
-            Ok(_) => {
+            Ok(_) => if options.verbose {
                 println!("Successfully disassembled binary")
             },
-            Err(e) => println!("Error disassembling: {}", e),
+            Err(e) => {
+                println!("Error disassembling: {}", e);
+                return Err(Error::DisassemblyError);
+            },
         };
     }
     if options.disam {
@@ -141,11 +220,40 @@ fn main() {
     if options.analysis {
         let mut sample: Sample = Sample::new(b);
         sample.analysis();
-        statistics::print_statistics(&sample.counts);
-        println!("Detected {} loops", sample.loops);
-        println!("Detected {} bitwise arithmetic operations", sample.bitops);
-        println!("Detected {} cryptographic constants", sample.constants.len());
-        println!("Detected {} strings that are commonly seen in ransom notes",
-                 sample.strings.len());
+
+        if options.verbose {
+            statistics::print_statistics(&sample.counts);
+            println!("Detected {} loops", sample.loops);
+            println!("Detected {} bitwise arithmetic operations", sample.bitops);
+            println!("Detected {} cryptographic constants", sample.constants.len());
+            println!("Detected {} strings that are commonly seen in ransom notes",
+                     sample.strings.len());
+        }
+
+        // 
+    }
+
+    Ok(())
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            Error::BinaryError => "Error opening binary",
+            Error::DisassemblyError => "Error disassembling binary",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl fmt::Display for Platform {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            Platform::Unix => "unix",
+            Platform::Linux => "linux",
+            Platform::Windows => "windows",
+            Platform::Unknown => "unknown"
+        };
+        write!(f, "{}", s)
     }
 }
