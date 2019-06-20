@@ -19,17 +19,24 @@ pub mod sample;
 
 use argparse::{ArgumentParser, StoreTrue, Store};
 use binary::binary::Binary;
-use mongodb::{Client, ThreadedClient};
+use mongodb::{Client, Document, ThreadedClient};
 use mongodb::db::ThreadedDatabase;
 use mongodb::coll::Collection;
 use sample::Sample;
 use statistics::{count_instructions, print_statistics};
 use std::{env, fmt, process};
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 enum Error {
     BinaryError,
     DisassemblyError,
+    DBError,
+}
+
+enum DBResult {
+    InsertResult(mongodb::coll::results::InsertOneResult),
+    UpdateResult(mongodb::coll::results::UpdateResult),
 }
 
 enum Platform {
@@ -164,13 +171,19 @@ fn main() {
     }
     let collection = client.db(&options.dbname).collection(&platform.to_string());
 
-    match analyze_binary(&options, collection) {
+    match analyze_binary(&options, &collection) {
         Ok(_) => (),
-        Err(e) => println!("Failed to analyze '{}': {}", options.fname, e)
+        Err(e) => {
+            println!("Failed to analyze '{}': {}", options.fname, e);
+            match collection.insert_one(doc! {"_id": options.fname, "error": e.to_string()}, None) {
+                Ok(_) => (),
+                Err(e) => println!("insert_one returned error {}", e)
+            };
+        }
     };
 }
 
-fn analyze_binary(options: &Options, collection: Collection) -> Result<(), Error> {
+fn analyze_binary(options: &Options, collection: &Collection) -> Result<(), Error> {
     let now = Instant::now();
     let mut b: Binary = match Binary::new(options.fname.clone()) {
         Ok(bin) => bin,
@@ -232,15 +245,61 @@ fn analyze_binary(options: &Options, collection: Collection) -> Result<(), Error
             println!("Detected {} strings that are commonly seen in ransom notes",
                      sample.strings.len());
             println!("Processed {} in {}.{} seconds",
-                     options.fname,
+                     options.fname.clone(),
                      time.as_secs(),
                      time.subsec_nanos());
         }
 
+        // TODO: Get number of vertices and edges without creating CFG twice.
+        let cfg = match sample.binary.cfg() {
+            Some(cfg) => cfg,
+            None => graphs::CFG {start: 0,
+                                 end: 0,
+                                 edges: HashSet::new(),
+                                 vertices: HashMap::new()}
+        };
+        let counts = match sample.counts_as_bson() {
+            Ok(c) => c,
+            Err(e) => {
+                println!("to_bson error: {}", e);
+                bson!({})
+            }
+        };
+
         // Add data to the database.
+        insert_or_replace(collection,
+                          doc! {"_id": options.fname.clone()},
+                          doc! {"_id": options.fname.clone(),
+                          "type": sample.binary.bin_type.to_string(),
+                          "arch": sample.binary.arch.to_string(),
+                          "bits": sample.binary.bits,
+                          "entry": sample.binary.entry,
+                          "bytes": sample.binary.bytes.len() as u64,
+                          "elapsed_time": {
+                              "sec": time.as_secs(),
+                              "nano": time.subsec_nanos()},
+                          "loops": sample.loops,
+                          "bitops": sample.bitops,
+                          "constants": sample.constants.len() as u64,
+                          "strings": sample.strings.len() as u64,
+                          "cfg": {
+                              "vertices": cfg.vertices.len() as u64,
+                              "edges": cfg.edges.len() as u64},
+                          "counts": counts,
+                          });
     }
 
     Ok(())
+}
+
+fn insert_or_replace(collection: &Collection, search_for: Document,
+                     document: Document) -> DBResult {
+    if let Ok(Some(d)) = collection.find_one(Some(search_for), None) {
+        return DBResult::UpdateResult(collection.replace_one(d, document, None).unwrap());
+    }
+    else {
+        return DBResult::InsertResult(collection.insert_one(document, None).unwrap());
+    }
 }
 
 impl fmt::Display for Error {
@@ -248,6 +307,7 @@ impl fmt::Display for Error {
         let s = match self {
             Error::BinaryError => "Error opening binary",
             Error::DisassemblyError => "Error disassembling binary",
+            Error::DBError => "Database error",
         };
         write!(f, "{}", s)
     }
