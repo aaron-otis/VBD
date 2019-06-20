@@ -9,6 +9,8 @@ extern crate libc;
 
 use self::libc::{c_void, c_long};
 use std::ffi::{CString, CStr};
+use std::fs::File;
+use std::io::Read;
 use std::ptr;
 use binary::binary::{Binary, BinaryArch, BinaryType, LoadError};
 use binary::symbol::{Symbol, SymbolType, SymbolBinding, SymbolTable};
@@ -52,6 +54,14 @@ pub fn load_binary(fname: String) -> Result<Binary, LoadError> {
             Err(e) => return Err(e),
         };
 
+        // Copy bytes.
+        let mut bytes: Vec<u8> = Vec::new();
+        let mut file = match File::open(fname.clone()) {
+            Ok(f) => f,
+            Err(e) => panic!("Failed to open {}: {}", fname.clone(), e)
+        };
+        file.read_to_end(&mut bytes);
+
         Ok(Binary {
             filename: fname,
             bin_type: flavor,
@@ -64,6 +74,7 @@ pub fn load_binary(fname: String) -> Result<Binary, LoadError> {
             symbols: symbols,
             functions: Vec::new(),
             blocks: Vec::new(),
+            bytes: bytes
         })
     }
 }
