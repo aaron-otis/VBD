@@ -86,7 +86,8 @@ fn main() {
 
         ap.set_description("Binary analysis tool");
         ap.refer(&mut options.fname)
-          .add_argument("file name", Store, "File to analyze");
+          .add_argument("file name", Store, "File to analyze")
+          .required();
         ap.refer(&mut options.sections)
           .add_option(&["-S", "--sections"],
                       StoreTrue,
@@ -135,12 +136,6 @@ fn main() {
                                               StoreTrue, "Enable all options");
         ap.parse_args_or_exit();
 
-    }
-
-    if options.fname.is_empty() {
-        let args: Vec<String> = env::args().collect();
-        println!("Usage: {} [OPTIONS] [FILE NAME]", args[0]);
-        process::exit(1);
     }
 
     if options.all {
@@ -243,6 +238,8 @@ fn analyze_binary(options: &Options, collection: &Collection) -> Result<(), Erro
             println!("Detected {} cryptographic constants", sample.constants.len());
             println!("Detected {} strings that are commonly seen in ransom notes",
                      sample.strings.len());
+            println!("Detected {} external functions",
+                     sample.binary.external_functions().len());
             println!("Processed {} in {}.{} seconds",
                      options.fname.clone(),
                      time.as_secs(),
@@ -269,23 +266,39 @@ fn analyze_binary(options: &Options, collection: &Collection) -> Result<(), Erro
         insert_or_replace(collection,
                           doc! {"_id": options.fname.clone()},
                           doc! {"_id": options.fname.clone(),
-                          "type": sample.binary.bin_type.to_string(),
-                          "arch": sample.binary.arch.to_string(),
-                          "bits": sample.binary.bits,
-                          "entry": sample.binary.entry,
-                          "bytes": sample.binary.bytes.len() as u64,
-                          "elapsed_time": {
-                              "sec": time.as_secs(),
-                              "nano": time.subsec_nanos()},
-                          "loops": sample.loops,
-                          "bitops": sample.bitops,
-                          "constants": sample.constants.len() as u64,
-                          "strings": sample.strings.len() as u64,
-                          "cfg": {
-                              "vertices": cfg.vertices.len() as u64,
-                              "edges": cfg.edges.len() as u64},
-                          "counts": counts,
-                          });
+                                "type": sample.binary.bin_type.to_string(),
+                                "arch": sample.binary.arch.to_string(),
+                                "bits": sample.binary.bits,
+                                "entry": sample.binary.entry,
+                                "bytes": sample.binary.bytes.len() as u64,
+                                "elapsed_time": {
+                                    "sec": time.as_secs(),
+                                    "nano": time.subsec_nanos()},
+                                "loops": sample.loops,
+                                "bitops": sample.bitops,
+                                "constants": {
+                                    "count": sample.constants.len() as u64,
+                                    "indices": sample.constants
+                                                     .iter()
+                                                     .map(|&i| bson!(i as u64))
+                                                     .collect::<Vec<mongodb::Bson>>(),},
+                                "strings": {
+                                    "count": sample.strings.len() as u64,
+                                    "indices": sample.strings
+                                                     .iter()
+                                                     .map(|&i| bson!(i as u64))
+                                                     .collect::<Vec<mongodb::Bson>>(),},
+                                "cfg": {
+                                    "vertices": cfg.vertices.len() as u64,
+                                    "edges": cfg.edges.len() as u64},
+                                "counts": counts,
+                                "functions": {
+                                    "dsym": sample.binary
+                                                  .external_functions()
+                                                  .iter()
+                                                  .map(|s| bson!(s))
+                                                  .collect::<Vec<mongodb::Bson>>()},
+                                });
     }
 
     Ok(())
