@@ -24,14 +24,13 @@ use mongodb::db::ThreadedDatabase;
 use mongodb::coll::Collection;
 use sample::Sample;
 use statistics::{count_instructions, print_statistics};
-use std::{env, fmt, process};
+use std::{fmt, fs, io, process};
 use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 enum Error {
     BinaryError(String),
     DisassemblyError(String),
-    DBError(String),
 }
 
 enum DBResult {
@@ -62,7 +61,7 @@ struct Options {
     all: bool,
 }
 
-fn main() {
+fn main() -> Result<(), io::Error> {
     // Set default options.
     let mut options: Options = Options {
         fname: String::new(),
@@ -86,7 +85,9 @@ fn main() {
 
         ap.set_description("Binary analysis tool");
         ap.refer(&mut options.fname)
-          .add_argument("file name", Store, "File to analyze")
+          .add_argument("file name", Store, "File to analyze.\
+                         If a directory is specified, all regular files inside it will\
+                         be processed.")
           .required();
         ap.refer(&mut options.sections)
           .add_option(&["-S", "--sections"],
@@ -145,7 +146,7 @@ fn main() {
         options.disam = true;
     }
 
-    // Connect to database.
+    // Configure database connection.
     let client = match Client::connect(&options.server, options.port) {
         Ok(client) => client,
         Err(e) => panic!("Database connection failed: {}", e)
@@ -166,16 +167,44 @@ fn main() {
     }
     let collection = client.db(&options.dbname).collection(&platform.to_string());
 
-    match analyze_binary(&options, &collection) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Failed to analyze '{}': {}", options.fname, e);
-            match collection.insert_one(doc! {"_id": options.fname, "error": e.to_string()}, None) {
-                Ok(_) => (),
-                Err(e) => println!("insert_one returned error {}", e)
-            };
+    // Process all files.
+    let mut files: Vec<String> = Vec::new();
+    let md = fs::metadata(options.fname.clone()).expect("Unable to open file");
+
+    if md.is_dir() {
+        if let Ok(entries) = fs::read_dir(options.fname.clone()) {
+            for entry in entries {
+                let entry = entry?;
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_file() {
+                        if let Some(s) = entry.path().to_str() {
+                            files.push(s.to_string());
+                        }
+                    }
+                }
+            }
         }
-    };
+    }
+    else {
+        files.push(options.fname.clone());
+    }
+
+    for file in files {
+        println!("{}", file);
+        continue;
+        match analyze_binary(&options, &collection) {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Failed to analyze '{}': {}", file, e);
+                match collection.insert_one(doc! {"_id": file,
+                                                  "error": e.to_string()}, None) {
+                    Ok(_) => (),
+                    Err(e) => println!("insert_one returned error {}", e)
+                };
+            }
+        };
+    }
+    Ok(())
 }
 
 fn analyze_binary(options: &Options, collection: &Collection) -> Result<(), Error> {
@@ -317,9 +346,8 @@ fn insert_or_replace(collection: &Collection, search_for: Document,
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
-            Error::BinaryError(e) => "Error opening binary",
-            Error::DisassemblyError(e) => "Error disassembling binary",
-            Error::DBError(e) => "Database error",
+            Error::BinaryError(e) => format!("Error opening binary: {}", e),
+            Error::DisassemblyError(e) => format!("Error disassembling binary: {}", e),
         };
         write!(f, "{}", s)
     }
