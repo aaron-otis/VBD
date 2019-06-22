@@ -1,6 +1,6 @@
 [package]
 name = "ma"
-version = "0.1.4"
+version = "0.7.6"
 authors = ["aron <amotis@calpoly.edu>"]
 publish = false
 
