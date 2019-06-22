@@ -190,8 +190,6 @@ fn main() -> Result<(), io::Error> {
     }
 
     for file in files {
-        println!("{}", file);
-        continue;
         match analyze_binary(&options, &collection) {
             Ok(_) => (),
             Err(e) => {
