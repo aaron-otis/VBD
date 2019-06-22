@@ -173,6 +173,14 @@ impl Binary {
             print_bytes(&section.bytes);
         }
     }
+
+    pub fn external_functions(&self) -> Vec<String> {
+        self.symbols.iter()
+                    .filter(|s| s.sym_type == SymbolType::SymTypeFunc &&
+                                s.table == SymbolTable::SymTabDynamic)
+                    .map(|s| s.name.clone())
+                    .collect()
+    }
 }
 
 impl fmt::Display for Binary {
