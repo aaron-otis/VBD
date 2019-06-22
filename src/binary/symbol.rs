@@ -1,5 +1,6 @@
 use std::fmt;
 
+#[derive(Clone, PartialEq)]
 pub enum SymbolType {
     SymTypeUnk,
     SymTypeNone,
@@ -9,6 +10,7 @@ pub enum SymbolType {
     SymTypeObject
 }
 
+#[derive(Clone, PartialEq)]
 pub enum SymbolBinding {
     SymBindLocal,
     SymBindGlobal,
@@ -16,17 +18,19 @@ pub enum SymbolBinding {
     SymBindUnk,
 }
 
+#[derive(Clone, PartialEq)]
 pub enum SymbolVisability {
     SymVisDefault,
     SymVisHidden,
 }
 
+#[derive(Clone, PartialEq)]
 pub enum SymbolTable {
     SymTabStatic,
     SymTabDynamic,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Symbol {
     pub sym_type: SymbolType,
     pub name: String,
@@ -56,19 +60,6 @@ impl fmt::Display for Symbol {
     }
 }
 
-impl Clone for SymbolType {
-    fn clone (&self) -> SymbolType {
-        match self {
-            SymbolType::SymTypeUnk => SymbolType::SymTypeUnk,
-            SymbolType::SymTypeNone => SymbolType::SymTypeNone,
-            SymbolType::SymTypeFunc => SymbolType::SymTypeFunc,
-            SymbolType::SymTypeSection => SymbolType::SymTypeSection,
-            SymbolType::SymTypeFile => SymbolType::SymTypeFile,
-            SymbolType::SymTypeObject => SymbolType::SymTypeObject,
-        }
-    }
-}
-
 impl fmt::Display for SymbolType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let st_str = match self {
@@ -83,17 +74,6 @@ impl fmt::Display for SymbolType {
     }
 }
 
-impl Clone for SymbolBinding {
-    fn clone (&self) -> SymbolBinding {
-        match self {
-            SymbolBinding::SymBindLocal => SymbolBinding::SymBindLocal,
-            SymbolBinding::SymBindGlobal => SymbolBinding::SymBindGlobal,
-            SymbolBinding::SymBindWeak => SymbolBinding::SymBindWeak,
-            SymbolBinding::SymBindUnk => SymbolBinding::SymBindUnk,
-        }
-    }
-}
-
 impl fmt::Display for SymbolBinding {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let sb_str = match self {
@@ -103,15 +83,6 @@ impl fmt::Display for SymbolBinding {
             SymbolBinding::SymBindUnk => "Unk",
         };
         write!(f, "{:6}", sb_str)
-    }
-}
-
-impl Clone for SymbolTable {
-    fn clone (&self) -> SymbolTable {
-        match self {
-            SymbolTable::SymTabStatic => SymbolTable::SymTabStatic,
-            SymbolTable::SymTabDynamic => SymbolTable::SymTabDynamic,
-        }
     }
 }
 
