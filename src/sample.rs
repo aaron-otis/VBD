@@ -130,12 +130,13 @@ impl Sample {
 pub enum Constants {
 }
 
-static KEYWORDS: [&'static str;   9] = [r"aes",
+static KEYWORDS: [&'static str;  10] = [r"aes",
                                         "rsa",
                                         "des",
                                         "chacha",
                                         "ransom",
-                                        "encrypt",
+                                        "crypt",
+                                        "Crypt",
                                         "AES",
                                         "RSA",
                                         "DES"];
