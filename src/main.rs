@@ -48,6 +48,7 @@ enum Platform {
 struct Options {
     fname: String,
     sections: bool,
+    one_sec: String,
     dump_sec: bool,
     symbols: bool,
     disam: bool,
@@ -66,6 +67,7 @@ fn main() -> Result<(), io::Error> {
     let mut options: Options = Options {
         fname: String::new(),
         sections: false,
+        one_sec: String::new(),
         dump_sec: false,
         symbols: false,
         disam: false,
@@ -97,6 +99,10 @@ fn main() -> Result<(), io::Error> {
           .add_option(&["-s", "--symbols"],
                       StoreTrue,
                       "Display entries in the symbols table.");
+        ap.refer(&mut options.one_sec)
+          .add_option(&["-c", "--section"],
+                      Store,
+                      "Show contents of the specified section.");
         ap.refer(&mut options.dump_sec)
           .add_option(&["-C", "--section-contents"],
                       StoreTrue,
@@ -222,8 +228,17 @@ fn analyze_binary(options: &Options, collection: &Collection) -> Result<(), Erro
         b.print_sections();
     }
     if options.symbols {
-        //print_symbols(&b.symbols);
         b.print_symbols();
+    }
+    if options.one_sec.len() > 0 {
+        if let Some(sec) = b.get_section(&options.one_sec) {
+            println!("{}\n", sec);
+            util::print_bytes(&sec.bytes);
+        }
+        else {
+            println!("Section '{}' not found", options.one_sec);
+        }
+        println!("");
     }
     if options.dump_sec {
         println!("Section contents:");

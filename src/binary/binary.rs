@@ -181,6 +181,15 @@ impl Binary {
                     .map(|s| s.name.clone())
                     .collect()
     }
+
+    pub fn get_section(&self, name: &str) -> Option<Section> {
+        for section in &self.sections {
+            if section.name == name {
+                return Some(section.clone());
+            }
+        }
+        None
+    }
 }
 
 impl fmt::Display for Binary {
