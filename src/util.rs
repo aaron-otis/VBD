@@ -26,3 +26,11 @@ pub fn print_bytes(bytes: &Vec<u8>) {
     }
     print!("\n");
 }
+
+/** Converts a slice of 4 bytes into an u32. Assumes slice is big endian. */
+pub fn bytes_to_u32(bytes: &[u8]) -> u32 {
+    ((bytes[0] as u32) << 24) |
+    ((bytes[1] as u32) << 16) |
+    ((bytes[2] as u32) << 8) |
+    bytes[3] as u32
+}
