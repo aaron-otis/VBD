@@ -1,6 +1,7 @@
 use std::fmt;
 use super::binary::LoadError;
 
+#[derive(Clone)]
 pub enum SectionType {
     SecTypeNone,
     SecTypeCode,
@@ -38,16 +39,6 @@ impl fmt::Display for Section {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:24} {} 0x{:016x} {}", self.name, self.sec_type, self.vma,
                self.size)
-    }
-}
-
-impl Clone for SectionType {
-    fn clone (&self) -> SectionType {
-        match self {
-            SectionType::SecTypeNone => SectionType::SecTypeNone,
-            SectionType::SecTypeCode => SectionType::SecTypeCode,
-            SectionType::SecTypeData => SectionType::SecTypeData,
-        }
     }
 }
 
