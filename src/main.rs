@@ -21,9 +21,9 @@ use binary::binary::Binary;
 use mongodb::{Client, Document, ThreadedClient};
 use mongodb::db::ThreadedDatabase;
 use mongodb::coll::Collection;
-use sample::Sample;
+use sample::{Sample, SampleType};
 use statistics::{count_instructions, print_statistics};
-use std::{fmt, fs, io};
+use std::{fmt, fs, io, process};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
@@ -59,6 +59,7 @@ struct Options {
     port: u16,
     dbname: String,
     limit: usize,
+    sample_type: SampleType,
     verbose: bool,
     all: bool,
 }
@@ -79,6 +80,7 @@ fn main() -> Result<(), io::Error> {
         port: 27017,
         dbname: "statistics".to_string(),
         limit: 15000,
+        sample_type: SampleType::Unknown,
         verbose: false,
         all: false,
     };
@@ -142,6 +144,12 @@ fn main() -> Result<(), io::Error> {
                       Store,
                       "The maximum number of vertices to process. Large vertex sets \
                       will exhaust memory (default: 15000).");
+        ap.refer(&mut options.sample_type)
+          .add_option(&["--type"],
+                      Store,
+                      "A tag for the type of sample under analysis. Valid options are \
+                      benign, cryptographic, and ransomware.")
+          .required();
         ap.refer(&mut options.verbose)
           .add_option(&["-v", "--verbose"],
                       StoreTrue,
@@ -151,6 +159,16 @@ fn main() -> Result<(), io::Error> {
         ap.parse_args_or_exit();
 
     }
+
+    // Check for valid sample type.
+    match options.sample_type {
+        SampleType::Unknown => {
+            println!("Invalid sample type. Valid types are: benign, cryptographic, \
+                     and ransomware.");
+            process::exit(1);
+        },
+        _ => ()
+    };
 
     if options.all {
         options.sections = true;
@@ -278,7 +296,6 @@ fn analyze_binary(fname: &str, options: &Options, collection: &Collection)
             Some(loops) => println!("Detected {} loops", loops.len()),
             None => return Err(Error::VertexSizeError),
         }
-        
     }
     if options.analysis {
         let mut sample: Sample = Sample::new(b);
@@ -325,6 +342,7 @@ fn analyze_binary(fname: &str, options: &Options, collection: &Collection)
                                 "bits": sample.binary.bits,
                                 "entry": sample.binary.entry,
                                 "bytes": sample.binary.bytes.len() as u64,
+                                "type": options.sample_type.to_string(),
                                 "elapsed_time": {
                                     "sec": time.as_secs(),
                                     "nano": time.subsec_nanos()},

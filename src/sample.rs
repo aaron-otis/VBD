@@ -4,7 +4,39 @@ use regex::bytes::RegexSet;
 use statistics;
 use std::collections::HashMap;
 use std::sync::mpsc;
-use std::thread;
+use std::{fmt, str, thread};
+
+pub enum SampleType {
+    Benign,
+    Cryptographic,
+    Ransomware,
+    Unknown
+}
+
+impl fmt::Display for SampleType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            SampleType::Benign => "benign",
+            SampleType::Cryptographic => "cryptographic",
+            SampleType::Ransomware => "ransomware",
+            SampleType::Unknown => "unknown"
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl str::FromStr for SampleType {
+    type Err = SampleType;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "benign" => Ok(SampleType::Benign),
+            "cryptographic" => Ok(SampleType::Cryptographic),
+            "ransomware" => Ok(SampleType::Ransomware),
+            _ => Err(SampleType::Unknown)
+        }
+    }
+}
 
 pub struct Sample{
     pub binary: Binary,
