@@ -39,7 +39,11 @@ impl Sample {
         let (loop_tx, loop_rx) = mpsc::channel();
         let mut bin = self.binary.clone();
         thread::spawn(move || {
-            loop_tx.send(bin.detect_loops().len() as u64).unwrap();
+            let loops = match bin.detect_loops() {
+                Some(loops) => loops.len() as u64,
+                None => 0 as u64
+            };
+            loop_tx.send(loops).unwrap();
         });
 
         let (count_tx, count_rx) = mpsc::channel();

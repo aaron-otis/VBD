@@ -52,12 +52,19 @@ pub struct Binary {
     pub symbols: Vec<Symbol>,
     pub functions: Vec<Function>,
     pub blocks: Vec<BasicBlock>,
-    pub bytes: Vec<u8>
+    pub bytes: Vec<u8>,
+    pub max_vertices: usize
 }
 
 impl Binary {
-    pub fn new<'b>(fname: String) -> Result<Binary, LoadError> {
-        load_binary(fname.clone())
+    pub fn new<'b>(fname: String, max_vertices: usize) -> Result<Binary, LoadError> {
+        let mut bin = match load_binary(fname.clone()) {
+            Ok(bin) => bin,
+            Err(e) => return Err(e)
+        };
+
+        bin.max_vertices = max_vertices;
+        Ok(bin)
     }
 
     pub fn disassemble(&mut self) -> Result<(), capstone::cs_err> {
@@ -85,10 +92,13 @@ impl Binary {
         graphs::CFG::new(self)
     }
 
-    pub fn detect_loops(&self) -> Vec<graphs::Loop> {
+    pub fn detect_loops(&self, ) -> Option<Vec<graphs::Loop>> {
         let mut loops: Vec<graphs::Loop> = Vec::new();
 
         if let Some(cfg) = graphs::CFG::new(self) {
+            if cfg.vertices.len() > self.max_vertices {
+                return None;
+            }
             let subgraphs = cfg.components();
 
             for subgraph in &subgraphs {
@@ -98,7 +108,7 @@ impl Binary {
             }
         }
 
-        loops
+        Some(loops)
     }
 
     pub fn get_text_section<'c>(self) -> Result<Section, LoadError> {

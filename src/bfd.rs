@@ -74,7 +74,8 @@ pub fn load_binary(fname: String) -> Result<Binary, LoadError> {
             symbols: symbols,
             functions: Vec::new(),
             blocks: Vec::new(),
-            bytes: bytes
+            bytes: bytes,
+            max_vertices: 0 // Placeholder.
         })
     }
 }

@@ -30,6 +30,7 @@ use std::time::Instant;
 enum Error {
     BinaryError(String),
     DisassemblyError(String),
+    VertexSizeError
 }
 
 enum DBResult {
@@ -57,6 +58,7 @@ struct Options {
     server: String,
     port: u16,
     dbname: String,
+    limit: usize,
     verbose: bool,
     all: bool,
 }
@@ -76,6 +78,7 @@ fn main() -> Result<(), io::Error> {
         server: "localhost".to_string(),
         port: 27017,
         dbname: "statistics".to_string(),
+        limit: 15000,
         verbose: false,
         all: false,
     };
@@ -134,6 +137,11 @@ fn main() -> Result<(), io::Error> {
           .add_option(&["--database"],
                       Store,
                       "The name of the MongoDB database to use (default: statistics).");
+        ap.refer(&mut options.limit)
+          .add_option(&["--limit"],
+                      Store,
+                      "The maximum number of vertices to process. Large vertex sets \
+                      will exhaust memory (default: 15000).");
         ap.refer(&mut options.verbose)
           .add_option(&["-v", "--verbose"],
                       StoreTrue,
@@ -213,7 +221,7 @@ fn main() -> Result<(), io::Error> {
 fn analyze_binary(fname: &str, options: &Options, collection: &Collection)
         -> Result<(), Error> {
     let now = Instant::now();
-    let mut b: Binary = match Binary::new(fname.to_string()) {
+    let mut b: Binary = match Binary::new(fname.to_string(), options.limit) {
         Ok(bin) => bin,
         Err(e) => return Err(Error::BinaryError(e.to_string()))
     };
@@ -266,7 +274,11 @@ fn analyze_binary(fname: &str, options: &Options, collection: &Collection)
         print_statistics(&count_instructions(&b));
     }
     if options.loops {
-        println!("Detected {} loops", b.detect_loops().len());
+        match b.detect_loops() {
+            Some(loops) => println!("Detected {} loops", loops.len()),
+            None => return Err(Error::VertexSizeError),
+        }
+        
     }
     if options.analysis {
         let mut sample: Sample = Sample::new(b);
@@ -361,6 +373,7 @@ impl fmt::Display for Error {
         let s = match self {
             Error::BinaryError(e) => format!("Error opening binary: {}", e),
             Error::DisassemblyError(e) => format!("Error disassembling binary: {}", e),
+            Error::VertexSizeError => format!("Too many vertices")
         };
         write!(f, "{}", s)
     }
