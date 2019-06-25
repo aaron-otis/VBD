@@ -306,8 +306,8 @@ fn analyze_binary(fname: &str, options: &Options, collection: &Collection)
 
         // Add data to the database.
         insert_or_replace(collection,
-                          doc! {"_id": options.fname.clone()},
-                          doc! {"_id": options.fname.clone(),
+                          doc! {"_id": fname.clone()},
+                          doc! {"_id": fname.clone(),
                                 "type": sample.binary.bin_type.to_string(),
                                 "arch": sample.binary.arch.to_string(),
                                 "bits": sample.binary.bits,
