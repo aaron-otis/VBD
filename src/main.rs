@@ -10,7 +10,6 @@ extern crate mongodb;
 pub mod binary;
 pub mod conversions;
 pub mod bfd;
-pub mod bgen_bfd;
 pub mod capstone;
 pub mod util;
 pub mod statistics;
