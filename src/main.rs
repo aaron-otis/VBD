@@ -24,7 +24,7 @@ use mongodb::db::ThreadedDatabase;
 use mongodb::coll::Collection;
 use sample::Sample;
 use statistics::{count_instructions, print_statistics};
-use std::{fmt, fs, io, process};
+use std::{fmt, fs, io};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
