@@ -168,39 +168,6 @@ impl CFG {
                   })
     }
 
-    /*
-    pub fn get_block(&self, addr: u64) -> Option<&BasicBlock> {
-        for block in &self.vertices {
-            if block.entry == addr {
-                return Some(&block);
-            }
-        }
-        None
-    }
-    */
-
-    /** Returns a subgraph of the current graph rooted at 'root'.
-     *
-     * Warning: May not return a connected component!
-     */
-    /*
-    pub fn subgraph(&self, root: u64) -> CFG {
-        let order = dfs(self, root, &mut HashSet::new(), 0);
-        let vertices = self.vertices.iter()
-                                    .filter(|&(k, v)| order.order
-                                                           .contains_key(k))
-                                    .map(|(&k, &v)| (k, v)) // Need map to collect.
-                                    .collect();
-        let edges = self.edges.iter()
-                              .filter(|e| order.order.contains_key(&e.entry) ||
-                                          order.order.contains_key(&e.exit))
-                              .cloned()
-                              .collect();
-
-        CFG {start: root, end: 0, edges: edges, vertices: vertices}
-    }
-    */
-
     pub fn components(&self) -> Vec<CFG> {
         let mut components: Vec<CFG> = Vec::new();
         let mut seen: HashSet<u32> = HashSet::new();
@@ -301,16 +268,6 @@ impl CFG {
                                        EdgeType::Directed));
             }
         }
-
-        // Create a temporary CFG.
-        let last_block = blocks.len() - 1;
-        let last_insn = blocks[last_block].instructions.len() - 1;
-        /*
-        let cfg = CFG {start: blocks[0].entry,
-                       end: blocks[last_block].instructions[last_insn].address,
-                       edges: edges.clone(),
-                       vertices: blocks.to_vec().clone()};
-         */
 
         /* Iterate over each block and use partial edge set to resolve edges due to
          * returns.
@@ -498,7 +455,6 @@ impl DominatorTree {
         let mut start_dom: HashSet<u32> = HashSet::new();
         start_dom.insert(start);
         dominators.insert(start, start_dom);
-        println!("[DominatorTree::new] Initializing dominators hashmap");
         for vertex in cfg.vertices.keys() {
             if *vertex != start {
                 dominators.insert(*vertex,
@@ -508,7 +464,6 @@ impl DominatorTree {
         /* Iteratively build Dominator tree.
          */
         let mut updated_dominators = true;
-        println!("[DominatorTree::new] Finding all dominators");
         while updated_dominators {
             updated_dominators = false;
 
@@ -555,7 +510,6 @@ impl DominatorTree {
 
         // Add each (idom(x), x) edge.
         let mut edges: HashSet<Edge> = HashSet::new();
-        println!("[DominatorTree::new] Creating edge set");
         for addr in block_entries {
             if addr != start {
                 let idom = match DominatorTree::idom(addr, &dominators) {
@@ -574,7 +528,6 @@ impl DominatorTree {
 
         let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
         queue.push_back((start, 0));
-        println!("[DominatorTree::new] Creating vertex set");
         while !queue.is_empty() {
             let (vertex, level) = match queue.pop_front() {
                 Some((vertex, level)) => (vertex, level),
@@ -613,7 +566,6 @@ impl DominatorTree {
 
         assert_eq!(cfg.vertices.len(), dom_vertices.len());
 
-        println!("[DominatorTree::new] Done");
         DominatorTree {root: start,
                        max_level: max_level,
                        vertices: dom_vertices,
@@ -699,14 +651,9 @@ pub struct DJGraph {
 
 impl DJGraph {
     pub fn new(cfg: &CFG, start: u32) -> DJGraph {
-        println!("[DJGraph::new] Creating dominator tree on CFG with {} vertices and {} edges",
-                 cfg.vertices.len(),
-                 cfg.edges.len());
         let dom_tree: DominatorTree = DominatorTree::new(&cfg, start);
-        println!("[DJGraph::new] cloning dominator tree edges");
         let mut edges = dom_tree.edges.clone();
 
-        println!("[DJGraph::new] Adding J edges");
         // Add J edges.
         for edge in &cfg.edges {
             // Ignore D edges.
@@ -730,7 +677,6 @@ impl DJGraph {
      */
     pub fn detect_loops(&mut self) -> Vec<Loop> {
         let mut loops: Vec<Loop> = Vec::new();
-        println!("[DJGraph::detect_loops] Detecting loops");
 
         // Need to identify sp-back edges from a spanning tree created via DFS.
         let ordering = dfs(self, self.start, &mut HashSet::new(), 0);
