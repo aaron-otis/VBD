@@ -558,7 +558,10 @@ impl DominatorTree {
         println!("[DominatorTree::new] Creating edge set");
         for addr in block_entries {
             if addr != start {
-                let idom = DominatorTree::idom(addr, &dominators);
+                let idom = match DominatorTree::idom(addr, &dominators) {
+                    Some(idom) => idom,
+                    None => cfg.start
+                };
                 edges.insert(Edge::new(idom, addr, EdgeType::DEdge));
                 idoms.insert(addr, idom);
             }
@@ -620,18 +623,17 @@ impl DominatorTree {
 
     /** Returns the immediate dominator of 'vertex'.
      */
-    fn idom(vertex: u32, dominators: &HashMap<u32, HashSet<u32>>) -> u32 {
+    fn idom(vertex: u32, dominators: &HashMap<u32, HashSet<u32>>) -> Option<u32> {
         let sdoms: HashSet<u32> = dominators[&vertex].iter()
                                                      .filter(|&&d| d != vertex)
                                                      .cloned()
                                                      .collect();
         for dom in &sdoms {
             if dominators[dom] == sdoms {
-                return *dom;
+                return Some(*dom);
             }
         }
-
-        panic!("Could not find immediate dominator for 0x{:x}", vertex);
+        None
     }
 
     /* Returns true if x = idom(y) and false otherwise. */
