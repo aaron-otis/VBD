@@ -195,7 +195,7 @@ fn main() -> Result<(), io::Error> {
     }
 
     for file in files {
-        match analyze_binary(&options, &collection) {
+        match analyze_binary(&file.clone(), &options, &collection) {
             Ok(_) => (),
             Err(e) => {
                 println!("Failed to analyze '{}': {}", file, e);
@@ -210,9 +210,10 @@ fn main() -> Result<(), io::Error> {
     Ok(())
 }
 
-fn analyze_binary(options: &Options, collection: &Collection) -> Result<(), Error> {
+fn analyze_binary(fname: &str, options: &Options, collection: &Collection)
+        -> Result<(), Error> {
     let now = Instant::now();
-    let mut b: Binary = match Binary::new(options.fname.clone()) {
+    let mut b: Binary = match Binary::new(fname.to_string()) {
         Ok(bin) => bin,
         Err(e) => return Err(Error::BinaryError(e.to_string()))
     };
