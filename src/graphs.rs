@@ -161,6 +161,10 @@ impl CFG {
             }
         }
 
+        if bin.blocks.len() == 0 {
+            return None;
+        }
+
         Some(CFG {start: bin.blocks[0].entry as u32,
                   end: bin.blocks[last_block].entry as u32,
                   edges: edges,
