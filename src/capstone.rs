@@ -60,6 +60,44 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
         // Create a hash set to track which addresses have been processed.
         let mut seen: HashSet<u64> = HashSet::new();
 
+        /* Preform linear disassembly to attempt to find function prologues and add
+         * the address to them to the queue.
+         */
+        {
+            let mut prologue: Option<u64> = None;
+            let pc = &mut text.bytes.as_ptr();
+            let mut size = text.size as usize;
+            let mut addr = text.vma;
+            while cs_disasm_iter(handle, pc, &mut size, &mut addr, cs_ins) {
+                match (*cs_ins).id {
+                    x86_insn_X86_INS_PUSH => {
+                        if (*cs_ins).reg_read(x86_reg_X86_REG_EBP) ||
+                           (*cs_ins).reg_read(x86_reg_X86_REG_RBP) {
+                            prologue = Some((*cs_ins).address);
+                       }
+                    },
+                    x86_insn_X86_INS_MOV =>  match prologue {
+                        Some(prologue_addr) => {
+                            if (*cs_ins).reg_written(x86_reg_X86_REG_EBP) &&
+                               (*cs_ins).reg_read(x86_reg_X86_REG_ESP) {
+                                addr_queue.push_back((String::new(),
+                                                      prologue_addr,
+                                                      FunType::Unknown));
+                            }
+                            else if (*cs_ins).reg_written(x86_reg_X86_REG_RBP) &&
+                                    (*cs_ins).reg_read(x86_reg_X86_REG_RSP) {
+                                addr_queue.push_back((String::new(),
+                                                      prologue_addr,
+                                                      FunType::Unknown));
+                            }
+                        },
+                        _ => ()
+                    },
+                    _ => prologue = None
+                }
+            }
+        }
+
         // Add known functions to the queue.
         if text.contains(bin.entry) {
             addr_queue.push_back((".text".to_string(),
@@ -326,6 +364,28 @@ impl cs_insn {
             }
         }
         None
+    }
+
+    pub fn reg_read(&self, reg: x86_insn) -> bool {
+        unsafe {
+            for i in 0..(*(*self).detail).regs_read_count {
+                if (*(*self).detail).regs_read[i as usize] as u32 == reg {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn reg_written(&self, reg: x86_insn) -> bool {
+        unsafe {
+            for i in 0..(*(*self).detail).regs_write_count {
+                if (*(*self).detail).regs_write[i as usize] as u32 == reg {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
