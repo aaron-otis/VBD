@@ -237,7 +237,10 @@ fn load_sections(bfd_h: *mut bfd) -> Result<Vec<Section>, LoadError> {
                                            bfd_sec, bytes.as_mut_ptr() as *mut c_void,
                                            0,
                                            (*bfd_sec).size) {
-                0 => continue,
+                0 => {
+                    bfd_sec = (*bfd_sec).next;
+                    continue;
+                },
                 _ => (),
             };
             sections.push(Section{
