@@ -71,24 +71,35 @@ pub fn disassemble(bin: &Binary) -> Result<Vec<BasicBlock>, cs_err> {
             while cs_disasm_iter(handle, pc, &mut size, &mut addr, cs_ins) {
                 match (*cs_ins).id {
                     x86_insn_X86_INS_PUSH => {
-                        if (*cs_ins).reg_read(x86_reg_X86_REG_EBP) ||
-                           (*cs_ins).reg_read(x86_reg_X86_REG_RBP) {
+                        let op = (*cs_ins).get_operands()[0];
+                        if op.type_ == x86_op_type_X86_OP_REG &&
+                           (op.__bindgen_anon_1.reg == x86_reg_X86_REG_RBP ||
+                            op.__bindgen_anon_1.reg == x86_reg_X86_REG_EBP) {
                             prologue = Some((*cs_ins).address);
                        }
                     },
                     x86_insn_X86_INS_MOV =>  match prologue {
                         Some(prologue_addr) => {
-                            if (*cs_ins).reg_written(x86_reg_X86_REG_EBP) &&
-                               (*cs_ins).reg_read(x86_reg_X86_REG_ESP) {
-                                addr_queue.push_back((String::new(),
-                                                      prologue_addr,
-                                                      FunType::Unknown));
-                            }
-                            else if (*cs_ins).reg_written(x86_reg_X86_REG_RBP) &&
-                                    (*cs_ins).reg_read(x86_reg_X86_REG_RSP) {
-                                addr_queue.push_back((String::new(),
-                                                      prologue_addr,
-                                                      FunType::Unknown));
+                            let operands = (*cs_ins).get_operands();
+                            if operands.len() >= 2 &&
+                               operands[0].type_ == x86_op_type_X86_OP_REG &&
+                               operands[1].type_ == x86_op_type_X86_OP_REG {
+                                   if operands[0].__bindgen_anon_1
+                                                 .reg == x86_reg_X86_REG_RBP &&
+                                      operands[1].__bindgen_anon_1
+                                                 .reg == x86_reg_X86_REG_RSP {
+                                        addr_queue.push_back((String::new(),
+                                                              prologue_addr,
+                                                              FunType::Unknown));
+                                   }
+                                   else if operands[0].__bindgen_anon_1
+                                                      .reg == x86_reg_X86_REG_EBP &&
+                                           operands[1].__bindgen_anon_1
+                                                      .reg == x86_reg_X86_REG_ESP {
+                                        addr_queue.push_back((String::new(),
+                                                              prologue_addr,
+                                                              FunType::Unknown));
+                                   }
                             }
                         },
                         _ => ()
@@ -386,6 +397,17 @@ impl cs_insn {
             }
         }
         false
+    }
+
+    pub fn get_operands(&self) -> Vec<cs_x86_op> {
+        let mut operands: Vec<cs_x86_op> = Vec::new();
+
+        unsafe {
+            for i in 0..(*(*self).detail).__bindgen_anon_1.x86.op_count {
+                operands.push((*(*self).detail).__bindgen_anon_1.x86.operands[i as usize]);
+            }
+        }
+        operands
     }
 }
 
