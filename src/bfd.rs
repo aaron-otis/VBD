@@ -233,9 +233,11 @@ fn load_sections(bfd_h: *mut bfd) -> Result<Vec<Section>, LoadError> {
 
             // Create a vector for the section contents and fill it.
             let mut bytes: Vec<u8> = vec![0 as u8; (*bfd_sec).size as usize];
-            match bfd_get_section_contents(bfd_h, bfd_sec, bytes.as_mut_ptr() as *mut c_void,
-                                           0, (*bfd_sec).size) {
-                0 => return Err(LoadError::SecReadErr),
+            match bfd_get_section_contents(bfd_h,
+                                           bfd_sec, bytes.as_mut_ptr() as *mut c_void,
+                                           0,
+                                           (*bfd_sec).size) {
+                0 => continue,
                 _ => (),
             };
             sections.push(Section{
