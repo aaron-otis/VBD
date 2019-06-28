@@ -58,6 +58,7 @@ struct Options {
     server: String,
     port: u16,
     dbname: String,
+    collection: String,
     limit: usize,
     sample_type: SampleType,
     verbose: bool,
@@ -79,6 +80,7 @@ fn main() -> Result<(), io::Error> {
         server: "localhost".to_string(),
         port: 27017,
         dbname: "statistics".to_string(),
+        collection: String::new(),
         limit: 15000,
         sample_type: SampleType::Unknown,
         verbose: false,
@@ -139,6 +141,10 @@ fn main() -> Result<(), io::Error> {
           .add_option(&["--database"],
                       Store,
                       "The name of the MongoDB database to use (default: statistics).");
+        ap.refer(&mut options.collection)
+          .add_option(&["--collection"],
+                      Store,
+                      "The name of the MongoDB collection to use.");
         ap.refer(&mut options.limit)
           .add_option(&["--limit"],
                       Store,
@@ -183,20 +189,26 @@ fn main() -> Result<(), io::Error> {
         Err(e) => panic!("Database connection failed: {}", e)
     };
 
-    let platform: Platform;
-    if cfg!(linux) {
-        platform = Platform::Linux;
-    }
-    else if cfg!(unix) {
-        platform = Platform::Unix;
-    }
-    else if cfg!(windows) {
-        platform = Platform::Windows;
+    let collection;
+    if options.collection.len() > 0 {
+        collection = client.db(&options.dbname).collection(&options.collection)
     }
     else {
-        platform = Platform::Unknown;
+        let platform: Platform;
+        if cfg!(linux) {
+            platform = Platform::Linux;
+        }
+        else if cfg!(unix) {
+            platform = Platform::Unix;
+        }
+        else if cfg!(windows) {
+            platform = Platform::Windows;
+        }
+        else {
+            platform = Platform::Unknown;
+        }
+        collection = client.db(&options.dbname).collection(&platform.to_string());
     }
-    let collection = client.db(&options.dbname).collection(&platform.to_string());
 
     // Process all files.
     let mut files: Vec<String> = Vec::new();
