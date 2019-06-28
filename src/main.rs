@@ -324,7 +324,7 @@ fn analyze_binary(fname: &str, options: &Options, collection: &Collection)
             println!("Detected {} external functions",
                      sample.binary.external_functions().len());
             println!("Processed {} in {}.{} seconds",
-                     options.fname.clone(),
+                     fname.clone(),
                      time.as_secs(),
                      time.subsec_nanos());
         }
