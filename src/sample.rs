@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 use std::{fmt, str, thread};
 
+#[derive(Clone)]
 pub enum SampleType {
     Benign,
     Cryptographic,
@@ -38,6 +39,7 @@ impl str::FromStr for SampleType {
     }
 }
 
+#[derive(Clone)]
 pub struct Sample{
     pub binary: Binary,
     pub counts: HashMap<String, u64>,
