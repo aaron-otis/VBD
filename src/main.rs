@@ -1,5 +1,6 @@
 extern crate argparse;
 extern crate regex;
+extern crate chrono;
 
 #[macro_use]
 extern crate lazy_static;
@@ -18,11 +19,12 @@ pub mod sample;
 
 use argparse::{ArgumentParser, StoreTrue, Store};
 use binary::binary::Binary;
+use chrono::Local;
 use mongodb::{Client, Document, ThreadedClient};
 use mongodb::db::ThreadedDatabase;
 use mongodb::coll::Collection;
-use sample::{Sample, SampleType};
-use statistics::{count_instructions, print_statistics};
+use sample::{Sample, SampleType, KEYWORDS};
+use statistics::{count_instructions, print_statistics, CSVFile, CSVType};
 use std::{fmt, fs, io, process};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -61,6 +63,8 @@ struct Options {
     collection: String,
     limit: usize,
     sample_type: SampleType,
+    csv: bool,
+    csv_filename: String,
     verbose: bool,
     all: bool,
 }
@@ -83,6 +87,8 @@ fn main() -> Result<(), io::Error> {
         collection: String::new(),
         limit: 15000,
         sample_type: SampleType::Unknown,
+        csv: false,
+        csv_filename: String::new(),
         verbose: false,
         all: false,
     };
@@ -95,8 +101,7 @@ fn main() -> Result<(), io::Error> {
         ap.refer(&mut options.fname)
           .add_argument("file name", Store, "File to analyze.\
                          If a directory is specified, all regular files inside it will\
-                         be processed.")
-          .required();
+                         be processed.");
         ap.refer(&mut options.sections)
           .add_option(&["-S", "--sections"],
                       StoreTrue,
@@ -154,8 +159,11 @@ fn main() -> Result<(), io::Error> {
           .add_option(&["--type"],
                       Store,
                       "A tag for the type of sample under analysis. Valid options are \
-                      benign, cryptographic, and ransomware.")
-          .required();
+                      benign, cryptographic, and ransomware.");
+        ap.refer(&mut options.csv)
+          .add_option(&["--csv"], StoreTrue, "Dump database contents to a CSV file.");
+        ap.refer(&mut options.csv_filename)
+          .add_option(&["--csv_file"], Store, "The name of the CSV file to write to.");
         ap.refer(&mut options.verbose)
           .add_option(&["-v", "--verbose"],
                       StoreTrue,
@@ -165,6 +173,23 @@ fn main() -> Result<(), io::Error> {
         ap.parse_args_or_exit();
 
     }
+
+    // Configure database connection.
+    let client = match Client::connect(&options.server, options.port) {
+        Ok(client) => client,
+        Err(e) => panic!("Database connection failed: {}", e)
+    };
+
+    if options.csv {
+        write_csv(&options, &client);
+        process::exit(0);
+    }
+
+    if !options.fname.len() > 0 {
+        eprintln!("Usage: ma [OPTIONS] FILE_NAME");
+        process::exit(1);
+    }
+
 
     // Check for valid sample type.
     match options.sample_type {
@@ -182,12 +207,6 @@ fn main() -> Result<(), io::Error> {
         options.dump_sec = true;
         options.disam = true;
     }
-
-    // Configure database connection.
-    let client = match Client::connect(&options.server, options.port) {
-        Ok(client) => client,
-        Err(e) => panic!("Database connection failed: {}", e)
-    };
 
     let collection;
     if options.collection.len() > 0 {
@@ -349,12 +368,12 @@ fn analyze_binary(fname: &str, options: &Options, collection: &Collection)
         insert_or_replace(collection,
                           doc! {"_id": fname.clone()},
                           doc! {"_id": fname.clone(),
-                                "type": sample.binary.bin_type.to_string(),
+                                "bin_type": sample.binary.bin_type.to_string(),
                                 "arch": sample.binary.arch.to_string(),
                                 "bits": sample.binary.bits,
                                 "entry": sample.binary.entry,
                                 "bytes": sample.binary.bytes.len() as u64,
-                                "type": options.sample_type.to_string(),
+                                "sample_type": options.sample_type.to_string(),
                                 "elapsed_time": {
                                     "sec": time.as_secs(),
                                     "nano": time.subsec_nanos()},
@@ -396,6 +415,85 @@ fn insert_or_replace(collection: &Collection, search_for: Document,
     else {
         return DBResult::InsertResult(collection.insert_one(document, None).unwrap());
     }
+}
+
+fn write_csv(options: &Options, client: &mongodb::Client) {
+    // Used the data as part of the filename.
+    let db = client.db(&options.dbname);
+    let mut collections: Vec<Collection> = Vec::new();
+
+    if options.collection.len() > 0 {
+        collections.push(db.collection(&options.collection));
+    }
+    else {
+        match db.collection_names(None) {
+            Ok (cols) => for collection in cols {
+                collections.push(db.collection(&collection));
+            },
+            _ => {
+                println!("No collections found in {}", options.dbname);
+                process::exit(1);
+            }
+        };
+    }
+
+    let general_info: Vec<String> =vec!["type".to_string(), "arch".to_string(),
+                                        "bits".to_string(), "bytes".to_string(),
+                                        "elapsed_time".to_string(), "loops".to_string(),
+                                        "constants".to_string(), "strings".to_string(),
+                                        "vertices".to_string(), "edges".to_string(),
+                                        "platform".to_string()];
+    let strings: Vec<String> = KEYWORDS.iter().map(|s| s.to_string()).collect();
+    let constants: Vec<String> = vec!["aes sbox".to_string(), "aes rcon".to_string(),
+                                      "poly1305aes".to_string(), "aes rcon".to_string(),
+                                      "aes ltable".to_string(),
+                                      "aes atable".to_string(), "aes powx".to_string()];
+
+    // Aggregate all instruction mnemonics.
+    let mut mnemonics: HashSet<String> = HashSet::new();
+    for collection in collections {
+        if let Ok(cursor) = collection.find(Some(doc!{"error": {"$exists": false}}),
+                                            None) {
+            for doc in cursor {
+                let doc = match doc {
+                    Ok(doc) => doc,
+                    _ => continue
+                };
+                if let Some(counts) = doc.get(&"counts") {
+                    match counts {
+                        mongodb::Bson::Document(cdoc) => {
+                            for (k, _) in cdoc.iter() {
+                                mnemonics.insert(k.to_string());
+                            }
+                        },
+                        _ => println!("'counts' not a document")
+                    };
+                }
+            }
+        }
+    }
+
+    let date = Local::today().to_string().replace("-", "_").replace(":", "_");
+    CSVFile::new("general_info".to_string() + &date + ".csv",
+                 general_info,
+                 CSVType::General,
+                 &db,
+                 None).write();
+    CSVFile::new("counts".to_string() + &date + ".csv",
+                 mnemonics.iter().cloned().collect::<Vec<String>>(),
+                 CSVType::Counts,
+                 &db,
+                 None).write();
+    CSVFile::new("strings".to_string() + &date + ".csv",
+                 strings,
+                 CSVType::Strings,
+                 &db,
+                 None).write();
+    CSVFile::new("constants".to_string() + &date + ".csv",
+                 constants,
+                 CSVType::Constants,
+                 &db,
+                 None).write();
 }
 
 impl fmt::Display for Error {

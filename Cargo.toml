@@ -1,6 +1,6 @@
 [package]
 name = "ma"
-version = "0.8.11"
+version = "0.9.0"
 authors = ["aron <amotis@calpoly.edu>"]
 publish = false
 
@@ -13,6 +13,7 @@ argparse = "0.2.2"
 regex = "1.1.7"
 lazy_static = "1.3.0"
 mongodb = "0.3.12"
+chrono = "0.4.7"
 
 [profile.dev]
 opt-level = 0
