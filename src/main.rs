@@ -185,7 +185,7 @@ fn main() -> Result<(), io::Error> {
         process::exit(0);
     }
 
-    if !options.fname.len() > 0 {
+    if !(options.fname.len() > 0) {
         eprintln!("Usage: ma [OPTIONS] FILE_NAME");
         process::exit(1);
     }
@@ -443,55 +443,13 @@ fn write_csv(options: &Options, client: &mongodb::Client) {
                                         "constants".to_string(), "strings".to_string(),
                                         "vertices".to_string(), "edges".to_string(),
                                         "platform".to_string()];
-    let strings: Vec<String> = KEYWORDS.iter().map(|s| s.to_string()).collect();
-    let constants: Vec<String> = vec!["aes sbox".to_string(), "aes rcon".to_string(),
-                                      "poly1305aes".to_string(), "aes rcon".to_string(),
-                                      "aes ltable".to_string(),
-                                      "aes atable".to_string(), "aes powx".to_string()];
 
-    // Aggregate all instruction mnemonics.
-    let mut mnemonics: HashSet<String> = HashSet::new();
-    for collection in collections {
-        if let Ok(cursor) = collection.find(Some(doc!{"error": {"$exists": false}}),
-                                            None) {
-            for doc in cursor {
-                let doc = match doc {
-                    Ok(doc) => doc,
-                    _ => continue
-                };
-                if let Some(counts) = doc.get(&"counts") {
-                    match counts {
-                        mongodb::Bson::Document(cdoc) => {
-                            for (k, _) in cdoc.iter() {
-                                mnemonics.insert(k.to_string());
-                            }
-                        },
-                        _ => println!("'counts' not a document")
-                    };
-                }
-            }
-        }
-    }
 
     let date = Local::today().to_string().replace("-", "_").replace(":", "_");
     CSVFile::new("general_info".to_string() + &date + ".csv",
                  general_info,
-                 CSVType::General,
-                 &db,
-                 None).write();
-    CSVFile::new("counts".to_string() + &date + ".csv",
-                 mnemonics.iter().cloned().collect::<Vec<String>>(),
-                 CSVType::Counts,
-                 &db,
-                 None).write();
-    CSVFile::new("strings".to_string() + &date + ".csv",
-                 strings,
-                 CSVType::Strings,
-                 &db,
-                 None).write();
-    CSVFile::new("constants".to_string() + &date + ".csv",
-                 constants,
-                 CSVType::Constants,
+                 None,
+                 None,
                  &db,
                  None).write();
 }
