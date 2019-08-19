@@ -2,7 +2,8 @@ use binary::binary::{Binary, Instruction};
 use capstone;
 use graphs;
 use mongodb::db::ThreadedDatabase;
-use sample::{Sample, SampleType};
+use mongodb::coll::Collection;
+use sample::{Sample, SampleType, KEYWORDS};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::fs::File;
@@ -38,23 +39,54 @@ pub fn is_bitop(insn: &Instruction) -> bool {
        insn.id == capstone::x86_insn_X86_INS_ORPS ||
        insn.id == capstone::x86_insn_X86_INS_ORPD ||
        insn.id == capstone::x86_insn_X86_INS_POR ||
+       insn.id == capstone::x86_insn_X86_INS_VPOR ||
        insn.id == capstone::x86_insn_X86_INS_XOR ||
        insn.id == capstone::x86_insn_X86_INS_XORPS ||
        insn.id == capstone::x86_insn_X86_INS_XORPD ||
-       insn.id == capstone::x86_insn_X86_INS_PXOR 
-       /*
-       insn.id == x86_insn_X86_INS_ ||
-       insn.id == x86_insn_X86_INS_ ||
-       insn.id == x86_insn_X86_INS_ ||
-       insn.id == x86_insn_X86_INS_ ||
-       insn.id == x86_insn_X86_INS_ ||
-       insn.id == x86_insn_X86_INS_ ||
-       */
+       insn.id == capstone::x86_insn_X86_INS_PXOR ||
+       insn.id == capstone::x86_insn_X86_INS_VPXOR ||
+       insn.id == capstone::x86_insn_X86_INS_NOT ||
+       insn.id == capstone::x86_insn_X86_INS_ROL ||
+       insn.id == capstone::x86_insn_X86_INS_ROR ||
+       insn.id == capstone::x86_insn_X86_INS_RORX ||
+       insn.id == capstone::x86_insn_X86_INS_SHL ||
+       insn.id == capstone::x86_insn_X86_INS_SHLD ||
+       insn.id == capstone::x86_insn_X86_INS_VPSRLDQ
     {
         return true
     }
 
     false
+}
+
+pub fn is_bitop_mnemonic(mnemonic: &str) -> bool {
+    mnemonic == "and" ||
+    mnemonic == "andn" ||
+    mnemonic == "andps" ||
+    mnemonic == "andnps" ||
+    mnemonic == "andpd" ||
+    mnemonic == "andnpd" ||
+    mnemonic == "not" ||
+    mnemonic == "or" ||
+    mnemonic == "orps" ||
+    mnemonic == "orpd" ||
+    mnemonic == "pand" ||
+    mnemonic == "pandn" ||
+    mnemonic == "por" ||
+    mnemonic == "pxor" ||
+    mnemonic == "rol" ||
+    mnemonic == "ror" ||
+    mnemonic == "rorx" ||
+    mnemonic == "shl" ||
+    mnemonic == "shld" ||
+    mnemonic == "shr" ||
+    mnemonic == "vpor" ||
+    mnemonic == "vpsrld" ||
+    mnemonic == "vpsrldq" ||
+    mnemonic == "vpxor" ||
+    mnemonic == "xor" ||
+    mnemonic == "xorpd" ||
+    mnemonic == "xorps"
 }
 
 #[derive(Clone)]
@@ -139,15 +171,18 @@ pub enum CSVType {
 pub struct CSVFile<'a> {
     pub filename: String,
     pub header: Vec<String>,
-    pub csv_type: CSVType,
     pub db: &'a mongodb::db::Database,
-    pub collections: Vec<String>
+    pub collections: Vec<String>,
+    mnemonics: Vec<String>,
+    strings: Vec<String>,
+    constants: Vec<String>
 }
 
 impl<'a> CSVFile<'_> {
     pub fn new(filename: String,
                header: Vec<String>,
-               csv_type: CSVType,
+               strings: Option<Vec<String>>,
+               constants: Option<Vec<String>>,
                db: &'a mongodb::db::Database,
                collections: Option<&'a [String]>) -> CSVFile<'a> {
 
@@ -169,11 +204,59 @@ impl<'a> CSVFile<'_> {
             None => collection_names
         };
 
+        // Get all collections to be used in discovering every instruction.
+        let mut colls: Vec<Collection> = Vec::new();
+        match db.collection_names(None) {
+            Ok (cols) => for collection in cols {
+                colls.push(db.collection(&collection));
+            },
+            _ => panic!("No collections found in database.")
+        };
+
+        // Aggregate all instruction mnemonics.
+        let mut mnemonics: HashSet<String> = HashSet::new();
+        for collection in colls {
+            if let Ok(cursor) = collection.find(Some(doc!{"error": {"$exists": false}}),
+                                                None) {
+                for doc in cursor {
+                    let doc = match doc {
+                        Ok(doc) => doc,
+                        _ => continue
+                    };
+                    if let Some(counts) = doc.get(&"counts") {
+                        match counts {
+                            mongodb::Bson::Document(cdoc) => {
+                                for (k, _) in cdoc.iter() {
+                                    mnemonics.insert(k.to_string());
+                                }
+                            },
+                            _ => println!("'counts' not a document")
+                        };
+                    }
+                }
+            }
+        }
+
+        // Convert mnemonics HashSet to a sorted Vec.
+        let mut mnemonics = mnemonics.iter().cloned().collect::<Vec<String>>();
+        mnemonics.sort();
+
         CSVFile {filename: filename,
                  header: header,
-                 csv_type: csv_type,
                  db: db,
-                 collections: collections}
+                 collections: collections,
+                 mnemonics: mnemonics,
+                 strings: match strings {
+                     Some(strs) => strs,
+                     None => KEYWORDS.iter().map(|s| s.to_string()).collect()
+                 },
+                 constants: match constants {
+                     Some(consts) => consts,
+                     None => vec!["aes sbox".to_string(), "aes rcon".to_string(),
+                                  "poly1305aes".to_string(), "aes rcon".to_string(),
+                                  "aes ltable".to_string(), "aes atable".to_string(),
+                                  "aes powx".to_string(), "aes sbox1".to_string()]
+                 }}
     }
 
     pub fn write(&self) {
@@ -184,7 +267,14 @@ impl<'a> CSVFile<'_> {
         };
 
         // Write header to file.
-        let header = format!("{},", "name") + &self.header.join(",") + "\n"; 
+        let header = format!("{},", "name") +
+                     &self.header.join(",") +
+                     ",bitops," +
+                     &self.mnemonics.join(",") +
+                     ",total" +
+                     &format!(",{}", self.strings.join(",")) +
+                     &format!(",{}", self.constants.join(",")) +
+                     "\n"; 
         file.write(header.as_bytes()).unwrap();
 
         // Write each line.
@@ -212,13 +302,11 @@ impl<'a> CSVFile<'_> {
                             };
                         }
 
-                        match self.csv_type {
-                            CSVType::General =>
-                                line += &self.general_info(document, coll_name.clone()),
-                            CSVType::Counts => line += &self.counts(document),
-                            CSVType::Strings => line += &self.strings(document),
-                            CSVType::Constants => line += &self.constants(document)
-                        };
+                        line += &self.general_info(&document, coll_name.clone());
+                        line += &self.counts(&document);
+                        line += &self.strings(&document);
+                        line += &self.constants(&document);
+
                         line.pop(); // Remove trailing ','.
                         line += "\n";
                         file.write(line.as_bytes()).unwrap();
@@ -229,7 +317,7 @@ impl<'a> CSVFile<'_> {
         }
     }
 
-    fn general_info(&self, doc: mongodb::Document, coll_name: String) -> String {
+    fn general_info(&self, doc: &mongodb::Document, coll_name: String) -> String {
         let mut line = String::new();
 
         for field in &self.header {
@@ -244,10 +332,11 @@ impl<'a> CSVFile<'_> {
                                     _ => eprintln!("'seconds' not an integer")
                                 };
                             }
+                            line += ".";
                             if let Some(nano) =  edoc.get(&"nano") {
                                 match nano {
-                                    mongodb::Bson::I64(n) => line += &format!(".{}", n),
-                                    mongodb::Bson::I32(n) => line += &format!(".{}", n),
+                                    mongodb::Bson::I64(n) => line += &format!("{}", n),
+                                    mongodb::Bson::I32(n) => line += &format!("{}", n),
                                     _ => eprintln!("'seconds' not an integer")
                                 };
                             }
@@ -256,10 +345,10 @@ impl<'a> CSVFile<'_> {
                     },
                     _ => eprintln!("'elapsed_time' doesn't exist in this document")
                 };
+                line += ",";
             }
             else if field == "constants" ||
-                    field == "strings" ||
-                    field == "constants" {
+                    field == "strings" {
                 match doc.get(&field) {
                     Some(value) => match value {
                         mongodb::Bson::Document(cdoc) => {
@@ -271,6 +360,9 @@ impl<'a> CSVFile<'_> {
                                         line += &format!("{},", n),
                                     _ => eprintln!("'count' not an integer")
                                 };
+                            }
+                            else {
+                                line += ",";
                             }
                         },
                         _ => println!("'{}' is not a document", field)
@@ -305,7 +397,7 @@ impl<'a> CSVFile<'_> {
                                 line += "benign,";
                             }
                             else {
-                                line += &s.to_string();
+                                line += &format!("{},", s);
                             }
                         },
                         _ => println!("'type' is not a string")
@@ -327,7 +419,7 @@ impl<'a> CSVFile<'_> {
         line
     }
 
-    fn counts(&self, doc: mongodb::Document) -> String {
+    fn counts(&self, doc: &mongodb::Document) -> String {
         let mut line = String::new();
         let mut counts: HashMap<String, u64> = HashMap::new();
 
@@ -352,16 +444,25 @@ impl<'a> CSVFile<'_> {
             _ => println!("'counts' doesn't exist in this document")
         };
 
-        for field in &self.header[1..] {
+        let mut bitops = 0;
+        let mut total = 0;
+        for field in &self.mnemonics {
             match counts.get(&field.clone()) {
-                Some(count) => line += &format!("{},", count),
+                Some(count) => {
+                    line += &format!("{},", count);
+                    total += count;
+                    if is_bitop_mnemonic(field) {
+                        bitops += count;
+                    }
+                },
                 None => line += "0,"
             };
         }
-        line
+
+        format!("{},{}{},", bitops, line, total)
     }
 
-    fn strings(&self, doc: mongodb::Document) -> String {
+    fn strings(&self, doc: &mongodb::Document) -> String {
         let mut line = String::new();
         let flags = self.get_array("strings".to_string(), &doc);
 
@@ -372,7 +473,7 @@ impl<'a> CSVFile<'_> {
         line
     }
 
-    fn constants(&self, doc: mongodb::Document) -> String {
+    fn constants(&self, doc: &mongodb::Document) -> String {
         let mut line = String::new();
         let flags = self.get_array("constants".to_string(), &doc);
 
@@ -384,7 +485,17 @@ impl<'a> CSVFile<'_> {
     }
 
     fn get_array(&self, name: String, doc: &mongodb::Document) -> Vec<u8> {
-        let mut flags = vec![0; self.header.len()];
+        let mut length: usize = 0;
+        if name == "strings" {
+            length = self.strings.len();
+        }
+        else if name == "constants" {
+            length = self.constants.len();
+        }
+        else {
+            panic!("Only 'strings' and 'constants' supported in get_array");
+        }
+        let mut flags: Vec<u8> = vec![0; length];
 
         match doc.get(&name) {
             Some(value) => match value {
@@ -393,8 +504,14 @@ impl<'a> CSVFile<'_> {
                         match indices {
                             mongodb::Bson::Array(arr) => for i in arr {
                                 match i {
-                                    mongodb::Bson::I32(i) => flags[*i as usize] = 1,
-                                    mongodb::Bson::I64(i) => flags[*i as usize] = 1,
+                                    mongodb::Bson::I32(i) =>
+                                        if (*i as usize) < flags.len() {
+                                            flags[*i as usize] = 1;
+                                    },
+                                    mongodb::Bson::I64(i) =>
+                                        if (*i as usize) < flags.len() {
+                                            flags[*i as usize] = 1;
+                                    },
                                     _ => println!("Array elements not integers")
                                 };
                             },
@@ -415,4 +532,10 @@ impl<'a> CSVFile<'_> {
 }
 
 pub fn most_unique_insns(samples: Vec<Sample>) {
+}
+
+#[test]
+fn test_is_bitop_mnemonic() {
+    assert_eq!(is_bitop_mnemonic("mov"), false);
+    assert_eq!(is_bitop_mnemonic("xor"), true);
 }
