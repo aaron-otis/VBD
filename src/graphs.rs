@@ -252,7 +252,7 @@ impl CFG {
                 };
 
                 /* If this instruction is not an unconditional control flow changing
-                 * instruction (i.e. jmp, ret, etc.), then and edge from this block to
+                 * instruction (i.e. jmp, ret, etc.), then an edge from this block to
                  * the next sequential block should be added, if that block exists.
                  */
                 if !last_insn.is_unconditional_cflow_ins() {
